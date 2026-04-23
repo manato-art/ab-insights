@@ -126,6 +126,8 @@ export async function POST(req: NextRequest) {
           platform: body.platform ?? null,
           appealType: body.appealType ?? null,
           appealText: body.appealText ?? null,
+          appealOriginalText: body.appealOriginalText ?? null,
+          appealSelectedIndex: body.appealSelectedIndex ?? null,
           additionalNote: body.additionalNote ?? null,
           styleAxesJson,
           urlAnalysisSummary: body.urlAnalysisSummary ?? null,

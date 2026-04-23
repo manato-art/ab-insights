@@ -17,6 +17,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
         </div>
         <nav className="flex-1 p-3 space-y-1 text-sm">
           <NavLink href="/" label="ダッシュボード" />
+          <NavLink href="/appeals" label="訴求ポイント統計" />
           <NavLink href="/prompts" label="プロンプト管理" />
           <NavLink href="/upload" label="学習アップロード" />
           <NavLink href="/events" label="イベント一覧" />

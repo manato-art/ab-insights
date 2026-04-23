@@ -26,6 +26,10 @@ export const createEventSchema = z.object({
   platform: z.string().optional().nullable(),
   appealType: z.string().optional().nullable(),
   appealText: z.string().optional().nullable(),
+  /** AI が最初に提案した訴求文(書き換え検出用)。未送信なら「書き換え情報なし」扱い。 */
+  appealOriginalText: z.string().optional().nullable(),
+  /** 選んだ①②③のどれか(1-based)。 */
+  appealSelectedIndex: z.number().int().min(1).max(3).optional().nullable(),
   additionalNote: z.string().optional().nullable(),
 
   // styleAxes は任意のオブジェクト(JSON 文字列化して保存)

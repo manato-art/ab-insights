@@ -71,7 +71,9 @@ model Event {
   ageGroup           String?
   platform           String?
   appealType         String?
-  appealText         String?
+  appealText         String? // 最終的に採用された訴求文(書き換え後)
+  appealOriginalText String? // AI が最初に提案した訴求文(選ばれた①②③の原文)
+  appealSelectedIndex Int?   // 選んだサブ項目の番号 (1|2|3)
   additionalNote     String?
   styleAxesJson      String? // JSON string
   urlAnalysisSummary String?
