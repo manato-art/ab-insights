@@ -1,6 +1,5 @@
 // ab-insights: 学習データ収集 + プロンプト管理基盤
-// ローカル: SQLite / 本番(Vercel): Postgres への切替を想定
-//   → provider 変更 + DATABASE_URL 変更で対応
+// Vercel + Neon Postgres で運用。DATABASE_URL は env 経由で注入。
 
 generator client {
   provider = "prisma-client"
@@ -8,7 +7,7 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
   // url は prisma.config.ts の datasource.url 経由で env から読み込む (Prisma 7+)
 }
 
