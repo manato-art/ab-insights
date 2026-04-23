@@ -1,0 +1,157 @@
+// ab-insights: 学習データ収集 + プロンプト管理基盤
+// ローカル: SQLite / 本番(Vercel): Postgres への切替を想定
+//   → provider 変更 + DATABASE_URL 変更で対応
+
+generator client {
+  provider = "prisma-client"
+  output   = "../app/generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+  // url は prisma.config.ts の datasource.url 経由で env から読み込む (Prisma 7+)
+}
+
+// ===========================================
+// 運用管理
+// ===========================================
+
+/// 単一管理者(複数人になったら後で分割)
+model Admin {
+  id           Int      @id @default(autoincrement())
+  passwordHash String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+/// 管理者セッション(簡易 cookie ベース)
+model Session {
+  id        String   @id
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([expiresAt])
+}
+
+/// ab-system 等の外部アプリからの API 認証トークン
+/// token は作成時にのみ平文で返し、DB には hash のみ保存
+model ApiToken {
+  id         Int       @id @default(autoincrement())
+  name       String // 「ab-system production」等の識別名
+  tokenHash  String    @unique
+  createdAt  DateTime  @default(now())
+  lastUsedAt DateTime?
+  active     Boolean   @default(true)
+}
+
+/// グローバル設定(学習 enabled フラグ等)
+model Setting {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt
+}
+
+// ===========================================
+// 学習データ
+// ===========================================
+
+/// 画像生成イベント(ab-system からの webhook で記録)
+model Event {
+  id Int @id @default(autoincrement())
+  /// ab-system 側のユーザー ID (opaque 文字列・匿名化)
+  abSystemUserId String
+  /// ab-system の生成エンドポイント: 'generate-images' | 'improve-images' | etc.
+  endpoint  String
+  model     String? // gemini-3.1-flash-image-preview 等
+  createdAt DateTime @default(now())
+
+  // 入力コンテキスト
+  genre              String?
+  subGenre           String?
+  gender             String?
+  ageGroup           String?
+  platform           String?
+  appealType         String?
+  appealText         String?
+  additionalNote     String?
+  styleAxesJson      String? // JSON string
+  urlAnalysisSummary String?
+  promptFull         String? // Gemini に送った最終プロンプト(全文)
+  promptHash         String? // 重複検出用
+
+  // 行動シグナル(後から更新)
+  imageCount           Int     @default(0)
+  downloaded           Boolean @default(false)
+  horizontallyExpanded Boolean @default(false)
+  aiEdited             Boolean @default(false)
+  regeneratedCount     Int     @default(0)
+  hitScore             Float? // 0〜1 で自動計算
+
+  images  EventImage[]
+  aiEdits EventAiEdit[]
+
+  @@index([genre, createdAt])
+  @@index([abSystemUserId, createdAt])
+  @@index([downloaded, horizontallyExpanded])
+}
+
+/// 各イベントで生成された画像(64x64 サムネ相当)
+model EventImage {
+  id         Int     @id @default(autoincrement())
+  event      Event   @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  eventId    Int
+  imageIndex Int // バリエーション番号
+  thumbnail  Bytes? // 64x64 WebP 圧縮(~3-5KB)
+  fullHash   String? // 元画像の SHA-256 (重複検出)
+  downloaded Boolean @default(false)
+  aiEdited   Boolean @default(false)
+
+  @@index([eventId])
+}
+
+/// AI 編集で触られた内容(ネガティブシグナル)
+model EventAiEdit {
+  id          Int      @id @default(autoincrement())
+  event       Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  eventId     Int
+  kind        String // 'text' | 'person' | 'background' | 'color' | 'product_swap' | 'remove'
+  instruction String
+  createdAt   DateTime @default(now())
+
+  @@index([eventId])
+  @@index([kind])
+}
+
+// ===========================================
+// プロンプト管理
+// ===========================================
+
+/// ジャンル別の追加プロンプトブロック
+/// admin が管理画面で作成・編集 → ab-system が生成時に GET /api/prompts/:genre で取得して挿入
+model GenrePrompt {
+  id        Int      @id @default(autoincrement())
+  genre     String // '化粧品' | 'サプリ' | ... (「共通」「*」も可)
+  blockName String // UI 表示用の名前 (例:「効果実感訴求」)
+  content   String // プロンプトに挿入される本文
+  enabled   Boolean  @default(true)
+  priority  Int      @default(0) // 並び順・プロンプト内での順序
+  note      String? // admin メモ(意図)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([genre, enabled, priority])
+}
+
+/// ジャンル別の集計済みインサイト(定期バッチで更新)
+model GenreInsight {
+  id                 Int      @id @default(autoincrement())
+  genre              String   @unique
+  sampleSize         Int      @default(0)
+  downloadRate       Float? // DL率 0〜1
+  expansionRate      Float? // 横展開率 0〜1
+  avgHitScore        Float?
+  topAppealTypesJson String? // JSON array
+  topStyleAxesJson   String?
+  editKindStatsJson  String? // AI 編集 kind 別頻度
+  updatedAt          DateTime @updatedAt
+}

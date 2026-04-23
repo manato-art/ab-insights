@@ -39,3 +39,13 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# generated prisma client (npx prisma generate で復元可能)
+/app/generated/prisma
+
+# runtime SQLite DB (ローカル専用・本番は別 DB)
+*.db
+*.db-shm
+*.db-wal
+/dev.db
+/prisma/dev.db
