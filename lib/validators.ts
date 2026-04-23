@@ -44,16 +44,28 @@ export type CreateEventInput = z.infer<typeof createEventSchema>;
 export const aiEditSchema = z.object({
   kind: z.string().min(1),
   instruction: z.string().min(1),
+  /** 対象画像の index (1-based)。undefined なら「どの画像か不明・Event レベル」扱い */
+  imageIndex: z.number().int().nonnegative().optional(),
+});
+
+/** 個別画像のシグナル(どの絵柄が刺さったかの粒度情報) */
+export const imageSignalSchema = z.object({
+  imageIndex: z.number().int().nonnegative(),
+  downloaded: z.boolean().optional(),
+  aiEdited: z.boolean().optional(),
 });
 
 /** POST /api/events/[id]/signal のリクエスト body */
 export const updateSignalSchema = z
   .object({
+    // Event レベルのシグナル (これまで通り)
     downloaded: z.boolean().optional(),
     horizontallyExpanded: z.boolean().optional(),
     aiEdited: z.boolean().optional(),
     regeneratedCount: z.number().int().nonnegative().optional(),
     aiEdits: z.array(aiEditSchema).optional(),
+    // 個別画像シグナル (B オプション: どの絵柄が DL / 編集されたか)
+    imageSignals: z.array(imageSignalSchema).optional(),
   })
   .refine(
     (v) =>
@@ -61,7 +73,8 @@ export const updateSignalSchema = z
       v.horizontallyExpanded !== undefined ||
       v.aiEdited !== undefined ||
       v.regeneratedCount !== undefined ||
-      (v.aiEdits !== undefined && v.aiEdits.length > 0),
+      (v.aiEdits !== undefined && v.aiEdits.length > 0) ||
+      (v.imageSignals !== undefined && v.imageSignals.length > 0),
     { message: '更新するフィールドが指定されていません' }
   );
 

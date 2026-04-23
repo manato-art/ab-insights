@@ -66,24 +66,62 @@ export async function POST(
   try {
     const hitScore = await prisma.$transaction(async (tx) => {
       // 対象 event を取得(存在確認 & マージ用)
-      const existing = await tx.event.findUnique({ where: { id: eventId } });
+      const existing = await tx.event.findUnique({
+        where: { id: eventId },
+        include: { images: true },
+      });
       if (!existing) {
-        // throw で transaction を中断し、catch 側で 404 を返す
         throw new NotFoundError();
       }
 
-      // aiEdits が渡ってきた時は aiEdited フラグも連動して true にする
-      // (明示的に body.aiEdited が指定されていればそれが優先)
+      // ===== 個別画像シグナルの反映(オプション B: どの絵柄が刺さったか) =====
+      // EventImage を (eventId, imageIndex) で更新する
+      if (body.imageSignals && body.imageSignals.length > 0) {
+        for (const sig of body.imageSignals) {
+          const targetImage = existing.images.find(
+            (im) => im.imageIndex === sig.imageIndex
+          );
+          if (!targetImage) continue; // 存在しない imageIndex は無視
+
+          const data: { downloaded?: boolean; aiEdited?: boolean } = {};
+          if (sig.downloaded !== undefined) data.downloaded = sig.downloaded;
+          if (sig.aiEdited !== undefined) data.aiEdited = sig.aiEdited;
+          if (Object.keys(data).length === 0) continue;
+
+          await tx.eventImage.update({
+            where: { id: targetImage.id },
+            data,
+          });
+        }
+      }
+
+      // ===== rollup: EventImage の状態を集計して Event.downloaded/aiEdited を決定 =====
+      // 更新後の EventImage を取り直して rollup
+      const imagesAfter = await tx.eventImage.findMany({ where: { eventId } });
+      const anyDownloaded = imagesAfter.some((im) => im.downloaded);
+      const anyAiEdited = imagesAfter.some((im) => im.aiEdited);
+
+      // Event レベルのシグナル: body で明示的に指定されていればそれ優先、
+      // なければ imageSignals からの rollup を使う
+      const downloadedToWrite =
+        body.downloaded !== undefined
+          ? body.downloaded
+          : body.imageSignals && body.imageSignals.length > 0
+            ? anyDownloaded
+            : undefined;
+
+      // aiEdits 配列 or imageSignals 由来
       const aiEditedToWrite =
         body.aiEdited !== undefined
           ? body.aiEdited
           : body.aiEdits && body.aiEdits.length > 0
             ? true
-            : undefined;
+            : body.imageSignals && body.imageSignals.length > 0
+              ? anyAiEdited
+              : undefined;
 
-      // マージ後の最終値(hitScore 算出用)
       const merged = {
-        downloaded: body.downloaded ?? existing.downloaded,
+        downloaded: downloadedToWrite ?? existing.downloaded,
         horizontallyExpanded:
           body.horizontallyExpanded ?? existing.horizontallyExpanded,
         aiEdited: aiEditedToWrite ?? existing.aiEdited,
@@ -96,7 +134,7 @@ export async function POST(
       await tx.event.update({
         where: { id: eventId },
         data: {
-          downloaded: body.downloaded,
+          downloaded: downloadedToWrite,
           horizontallyExpanded: body.horizontallyExpanded,
           aiEdited: aiEditedToWrite,
           regeneratedCount: body.regeneratedCount,
@@ -104,7 +142,7 @@ export async function POST(
         },
       });
 
-      // aiEdits は append
+      // aiEdits は append (imageIndex がついてれば EventImage.aiEdited も true に)
       if (body.aiEdits && body.aiEdits.length > 0) {
         for (const edit of body.aiEdits) {
           await tx.eventAiEdit.create({
@@ -114,6 +152,18 @@ export async function POST(
               instruction: edit.instruction,
             },
           });
+          // imageIndex が指定されていれば個別画像も aiEdited にマーク
+          if (edit.imageIndex !== undefined) {
+            const targetImage = existing.images.find(
+              (im) => im.imageIndex === edit.imageIndex
+            );
+            if (targetImage) {
+              await tx.eventImage.update({
+                where: { id: targetImage.id },
+                data: { aiEdited: true },
+              });
+            }
+          }
         }
       }
 
