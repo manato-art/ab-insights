@@ -11,7 +11,10 @@ const globalForPrisma = globalThis as unknown as {
 };
 
 function createPrismaClient(): PrismaClient {
-  const url = process.env.DATABASE_URL;
+  // Neon の pooled URL (pgbouncer 経由) は Prisma のトランザクションと相性が悪く
+  // P2028 "Transaction not found" を起こす。unpooled URL(直接接続)を優先する。
+  // ローカルで UNPOOLED が未設定でも DATABASE_URL にフォールバック。
+  const url = process.env.DATABASE_URL_UNPOOLED || process.env.DATABASE_URL;
   if (!url) {
     throw new Error('[db] DATABASE_URL is not set. Vercel+Neon を設定するか .env に Postgres 接続文字列を記述してください');
   }
