@@ -8,6 +8,7 @@ import {
   disableUploadedGenre,
   enableUploadedGenre,
   deleteUploadedGenre,
+  previewGenreLearning,
   type UploadResult,
 } from './actions';
 import { Button } from '@/components/ui/button';
@@ -64,6 +65,22 @@ export default function UploadPanel({ stats }: { stats: GenreStat[] }) {
         setResultDialog(result);
       } else {
         toast.error(result.error || 'アップロードに失敗しました');
+      }
+    });
+  }
+
+  function handlePreview(genre: string) {
+    startTransition(async () => {
+      toast.info(`${genre} のプレビューを生成中…`);
+      const result = await previewGenreLearning(genre);
+      if (result.success) {
+        toast.success(
+          `プレビュー生成完了(${result.eventCount} 件集計${result.enhanced ? ' / AI 要約' : ' / ルールベース'}) — 未保存`,
+        );
+        // プレビュー用フラグを付けて Dialog に渡す(ResultCard 側でバッジ表示)
+        setResultDialog({ ...result, _preview: true } as UploadResult & { _preview?: boolean });
+      } else {
+        toast.error(result.error || 'プレビュー生成に失敗しました');
       }
     });
   }
@@ -230,6 +247,14 @@ export default function UploadPanel({ stats }: { stats: GenreStat[] }) {
               <div className="flex gap-2 flex-wrap">
                 <Button
                   size="sm"
+                  variant="outline"
+                  onClick={() => handlePreview(s.genre)}
+                  disabled={pending || s.eventCount === 0}
+                >
+                  確認(プレビュー)
+                </Button>
+                <Button
+                  size="sm"
                   onClick={() => handleUpload(s.genre)}
                   disabled={pending || s.eventCount === 0}
                 >
@@ -358,7 +383,7 @@ function ThumbTile({ thumb }: { thumb: ThumbItem }) {
   );
 }
 
-function ResultCard({ result }: { result: UploadResult }) {
+function ResultCard({ result }: { result: UploadResult & { _preview?: boolean } }) {
   if (!result.success) {
     return (
       <div className="border border-destructive/30 bg-destructive/5 p-3 rounded">
@@ -373,7 +398,13 @@ function ResultCard({ result }: { result: UploadResult }) {
   return (
     <div className="border rounded p-3 space-y-2">
       <div className="flex items-center gap-2">
-        <Badge>成功</Badge>
+        {result._preview ? (
+          <Badge variant="outline" className="border-blue-500 text-blue-600">
+            プレビュー(未保存)
+          </Badge>
+        ) : (
+          <Badge>成功</Badge>
+        )}
         <span className="font-semibold">{result.genre}</span>
         <span className="text-xs text-muted-foreground">
           {result.eventCount} 件集計
@@ -383,6 +414,11 @@ function ResultCard({ result }: { result: UploadResult }) {
       <pre className="text-xs bg-muted p-2 rounded max-h-48 overflow-y-auto whitespace-pre-wrap font-mono">
         {result.promptPreview}
       </pre>
+      {result._preview && (
+        <p className="text-[11px] text-muted-foreground">
+          ※ この内容はまだ保存されていません。問題なければ Dialog を閉じて「アップロード」ボタンを押してください。
+        </p>
+      )}
     </div>
   );
 }

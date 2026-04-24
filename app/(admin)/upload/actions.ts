@@ -197,6 +197,47 @@ export async function deleteUploadedGenre(genre: string) {
 }
 
 /**
+ * プレビュー生成(DB への保存なし)。
+ * uploadGenreLearning と同じロジックで集計+AI要約するが、GenrePrompt には書き込まない。
+ * 「確認してからアップロード」フロー用。
+ */
+export async function previewGenreLearning(genre: string): Promise<UploadResult> {
+  await assertAdmin();
+  const g = (genre ?? '').trim();
+  if (!g) {
+    return {
+      success: false, genre, eventCount: 0, promptPreview: '',
+      enhanced: false, model: null, error: 'ジャンル名が空です',
+    };
+  }
+  try {
+    const learning = await computeGenreLearning(g);
+    if (learning.eventCount === 0) {
+      return {
+        success: false, genre: g, eventCount: 0, promptPreview: '',
+        enhanced: false, model: null,
+        error: 'このジャンルの学習データ(Event)がまだありません',
+      };
+    }
+    const summarized = await summarizeWithAI(learning);
+    return {
+      success: true,
+      genre: g,
+      eventCount: learning.eventCount,
+      promptPreview: summarized.text,
+      enhanced: summarized.enhanced,
+      model: summarized.model,
+    };
+  } catch (e) {
+    return {
+      success: false, genre: g, eventCount: 0, promptPreview: '',
+      enhanced: false, model: null,
+      error: (e as Error).message || '不明なエラー',
+    };
+  }
+}
+
+/**
  * アップロード済みブロックの全文と付随メタデータを取得(編集 Dialog 用)。
  * 未アップロードなら null を返す。
  */
