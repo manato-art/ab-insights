@@ -38,7 +38,12 @@ type GenreStat = {
 
 async function getGenreStats(): Promise<GenreStat[]> {
   // Event + EventImage(サムネ付き)を一括取得
-  // downloaded=true を優先的に拾うため、EventImage も並行でフィルタ
+  // 保存画像(downloaded=true) を必ず thumbs 枠内に入れるため、以下の順で並べる:
+  //   1) downloaded desc : DL されたイベントを先頭
+  //   2) hitScore desc (nulls last) : hit の高いものを次に
+  //   3) createdAt desc : 新しい順
+  // Postgres は NULL を DESC で先頭に置くため、nulls:'last' を明示しないと
+  // hitScore=null の未 DL イベントが上位を占拠して DL イベントが 24 枠外になる。
   const events = await prisma.event.findMany({
     where: { genre: { not: null } },
     include: {
@@ -49,9 +54,15 @@ async function getGenreStats(): Promise<GenreStat[]> {
           aiEdited: true,
           thumbnail: true,
         },
+        // DL された画像を先頭に(24 枠内で取りこぼさないため)
+        orderBy: [{ downloaded: 'desc' }, { imageIndex: 'asc' }],
       },
     },
-    orderBy: [{ hitScore: 'desc' }, { createdAt: 'desc' }],
+    orderBy: [
+      { downloaded: 'desc' },
+      { hitScore: { sort: 'desc', nulls: 'last' } },
+      { createdAt: 'desc' },
+    ],
   });
 
   const byGenre = new Map<

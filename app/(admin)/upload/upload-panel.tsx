@@ -323,8 +323,11 @@ function ThumbTile({ thumb }: { thumb: ThumbItem }) {
   if (thumb.aiEdited)   badges.push(<span key="ed" className="text-[9px] leading-none px-1 py-0.5 bg-purple-500 text-white rounded-sm">EDIT</span>);
 
   // 保存(DL / 完成ダウンロード押下) された画像は赤いモヤ + 赤枠で強調
+  // 重要: ring/shadow は box-shadow で描画されるため overflow-hidden 要素に付けると
+  // 完全クリップされて見えなくなる。外側 button には overflow を付けず、
+  // 内側ラッパに overflow-hidden を置く。
   const savedGlowClass = thumb.downloaded
-    ? 'ring-2 ring-red-500 shadow-[0_0_14px_rgba(239,68,68,0.55)]'
+    ? 'ring-4 ring-red-500 ring-offset-2 ring-offset-background shadow-[0_0_18px_rgba(239,68,68,0.7)]'
     : thumb.aiEdited
     ? 'ring-2 ring-purple-500'
     : 'ring-1 ring-border';
@@ -334,27 +337,28 @@ function ThumbTile({ thumb }: { thumb: ThumbItem }) {
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className={`relative aspect-square rounded overflow-hidden bg-muted ${savedGlowClass} hover:opacity-90 transition`}
+        className={`relative aspect-square rounded bg-muted ${savedGlowClass} hover:opacity-90 transition`}
         title={`Event #${thumb.eventId} / image ${thumb.imageIndex}${thumb.appealType ? ` / ${thumb.appealType}` : ''}${thumb.hitScore != null ? ` / hit=${(thumb.hitScore * 100).toFixed(0)}%` : ''}`}
       >
-        {/* 赤いモヤ(オーバーレイ) */}
-        {thumb.downloaded && (
-          <div
-            aria-hidden
-            className="absolute inset-0 pointer-events-none z-10 bg-[radial-gradient(circle_at_center,rgba(239,68,68,0.35),rgba(239,68,68,0)_70%)] mix-blend-screen"
-          />
-        )}
-        {thumb.dataUrl ? (
-          // サーバーから渡される data:image/webp;base64,... のみ使用するので next/image は使わず <img> で OK
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={thumb.dataUrl} alt="" className="w-full h-full object-cover" />
-        ) : (
-          <div className="w-full h-full flex items-center justify-center text-[10px] text-muted-foreground">
-            no thumb
-          </div>
-        )}
+        <div className="absolute inset-0 rounded overflow-hidden">
+          {thumb.dataUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={thumb.dataUrl} alt="" className="w-full h-full object-cover" />
+          ) : (
+            <div className="w-full h-full flex items-center justify-center text-[10px] text-muted-foreground">
+              no thumb
+            </div>
+          )}
+          {/* 赤いモヤ(オーバーレイ) — overflow-hidden 内に置いて画像と同じクリップ範囲 */}
+          {thumb.downloaded && (
+            <div
+              aria-hidden
+              className="absolute inset-0 pointer-events-none bg-[radial-gradient(circle_at_center,rgba(239,68,68,0.45),rgba(239,68,68,0)_70%)] mix-blend-screen"
+            />
+          )}
+        </div>
         {badges.length > 0 && (
-          <div className="absolute top-1 left-1 flex flex-col gap-0.5">{badges}</div>
+          <div className="absolute top-1 left-1 flex flex-col gap-0.5 z-10">{badges}</div>
         )}
       </button>
       <Dialog open={open} onOpenChange={setOpen}>
