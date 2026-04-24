@@ -23,9 +23,18 @@ export type GenreLearning = {
   topStyles: Array<{ axis: string; value: string; count: number }>;
   platformDistribution: Array<{ platform: string; count: number }>;
   editKindDistribution: Array<{ kind: string; count: number }>;
+  /** 保存された(DL された)画像のサムネイルとメタ — Vision 解析で学習に活かす */
+  savedImages: Array<{
+    dataUrl: string; // data:image/webp;base64,...
+    appealType: string | null;
+    appealText: string | null;
+  }>;
   promptText: string; // ab-system に渡す学習済みブロック本文
   generatedAt: Date;
 };
+
+/** Vision 解析に渡す保存画像の最大数 (コスト/レイテンシ上限) */
+const MAX_SAVED_IMAGES_FOR_VISION = 8;
 
 /**
  * 指定ジャンルの学習データを集計して prompt テキストに変換する
@@ -182,6 +191,29 @@ export async function computeGenreLearning(genre: string): Promise<GenreLearning
 
   const promptText = lines.join('\n');
 
+  // 保存された(DLされた)画像のサムネイルを最大 N 枚取得 — Vision 解析で学習に活かす
+  const savedImagesRaw = await prisma.eventImage.findMany({
+    where: {
+      downloaded: true,
+      thumbnail: { not: null },
+      event: { genre },
+    },
+    select: {
+      thumbnail: true,
+      event: { select: { appealType: true, appealText: true, hitScore: true } },
+    },
+    orderBy: [{ event: { hitScore: 'desc' } }, { id: 'desc' }],
+    take: MAX_SAVED_IMAGES_FOR_VISION,
+  });
+  const savedImages = savedImagesRaw
+    .filter((row) => row.thumbnail)
+    .map((row) => ({
+      dataUrl:
+        'data:image/webp;base64,' + Buffer.from(row.thumbnail!).toString('base64'),
+      appealType: row.event.appealType,
+      appealText: row.event.appealText,
+    }));
+
   return {
     genre,
     eventCount,
@@ -192,6 +224,7 @@ export async function computeGenreLearning(genre: string): Promise<GenreLearning
     topStyles,
     platformDistribution,
     editKindDistribution,
+    savedImages,
     promptText,
     generatedAt: new Date(),
   };
@@ -220,20 +253,32 @@ export async function summarizeWithAI(
   const { default: OpenAI } = await import('openai');
   const openai = new OpenAI({ apiKey });
 
+  // 保存画像(DL済)が 1 枚でもあれば Vision 解析つきのモデルに切替
+  const hasImages = learning.savedImages.length > 0;
+  const model = hasImages ? 'gpt-4o' : 'gpt-4o-mini';
+
   const systemPrompt = [
     'あなたは日本の広告代理店に所属するシニア広告デザイナー兼プロンプトエンジニアです。',
     'これから、画像生成 AI (Google Gemini 3.1 Flash Image) で広告バナーを生成する際に、',
     '特定のジャンルで「より刺さる」出力にするための追加プロンプトブロックを作成してもらいます。',
+    hasImages
+      ? '添付された画像は「ユーザーが実際にダウンロード(保存)した広告バナー = 成功例」です。これらの画像から具体的な共通要素(レイアウト・タイポグラフィ・文字サイズ比・配色・トーン&マナー・人物の有無やポーズ・商品の見せ方・キャッチコピーの書き方・CTA の位置/形状/色)を抽出し、プロンプトブロックに必ず反映してください。'
+      : '',
     '出力は以下を厳守してください:',
     '- 日本語',
-    '- 400〜700 文字程度',
+    hasImages ? '- 600〜1000 文字程度' : '- 400〜700 文字程度',
     '- Gemini に直接渡す「追加指示セクション」として書く(指示形・命令形)',
     '- ネガティブ指示(「〜禁止」)を乱発せず、ポジティブな方向指示を優先',
-    '- 統計データから「この傾向だからこうする」という因果を短く示す',
-    '- 「プロ仕様」「クオリティ高く」等の抽象語ではなく、具体的なデザイン要素(配色・構図・タイポ・光の当て方)を指示',
-  ].join('\n');
+    '- 統計データと画像観察から「この傾向だからこうする」という因果を短く示す',
+    '- 「プロ仕様」「クオリティ高く」等の抽象語ではなく、具体的なデザイン要素(配色・構図・タイポ・光の当て方・文言パターン)を指示',
+    hasImages
+      ? '- 画像から読み取れる文言・フレーズの癖、色の傾向(#16進や具体的な色名)、余白比、情報階層を必ず明記する'
+      : '',
+  ]
+    .filter(Boolean)
+    .join('\n');
 
-  const userPrompt = [
+  const userPromptLines = [
     `## ジャンル: ${learning.genre}`,
     `## 実データサマリ(直近 ${learning.eventCount} 件)`,
     `- DL 率: ${learning.downloadedCount}/${learning.eventCount} (${((learning.downloadedCount / Math.max(1, learning.eventCount)) * 100).toFixed(1)}%)`,
@@ -256,25 +301,58 @@ export async function summarizeWithAI(
     `## ユーザーが後から修正することが多い要素(= 初期出力の弱点)`,
     ...learning.editKindDistribution.slice(0, 6).map((e) => `- ${e.kind}: ${e.count}件`),
     '',
+  ];
+
+  if (hasImages) {
+    userPromptLines.push(
+      `## 保存された成功画像 (${learning.savedImages.length} 枚 — ユーザーが DL / 完成ダウンロードした実績あり)`,
+      ...learning.savedImages.map((img, i) => {
+        const bits: string[] = [`画像${i + 1}:`];
+        if (img.appealType) bits.push(`訴求タイプ=${img.appealType}`);
+        if (img.appealText) bits.push(`訴求文=${img.appealText.slice(0, 80)}`);
+        return bits.join(' / ');
+      }),
+      '',
+      '上記の成功画像から、レイアウト/タイポ/配色/文言パターン/商品の見せ方を抽出して学習ブロックに反映してください。',
+    );
+  }
+
+  userPromptLines.push(
     '---',
-    `上記の実データ傾向を踏まえ、「${learning.genre}」ジャンルの広告バナーを生成する際に Gemini に追加で渡す`,
-    '400〜700 文字のプロンプトブロックを書いてください。ヘッダーは `##【学習済み傾向: ' + learning.genre + '】##` で始めてください。',
-  ].join('\n');
+    `上記の実データ傾向${hasImages ? 'と成功画像群の観察' : ''}を踏まえ、「${learning.genre}」ジャンルの広告バナーを生成する際に Gemini に追加で渡す`,
+    `${hasImages ? '600〜1000' : '400〜700'} 文字のプロンプトブロックを書いてください。ヘッダーは \`##【学習済み傾向: ${learning.genre}】##\` で始めてください。`,
+  );
+
+  const userText = userPromptLines.join('\n');
+
+  // Vision 用 multimodal content を組み立て
+  const userContent: Array<
+    | { type: 'text'; text: string }
+    | { type: 'image_url'; image_url: { url: string; detail?: 'low' | 'high' | 'auto' } }
+  > = [{ type: 'text', text: userText }];
+  if (hasImages) {
+    for (const img of learning.savedImages) {
+      userContent.push({
+        type: 'image_url',
+        image_url: { url: img.dataUrl, detail: 'low' },
+      });
+    }
+  }
 
   try {
     const completion = await openai.chat.completions.create({
-      model: 'gpt-4o-mini',
+      model,
       temperature: 0.4,
       messages: [
         { role: 'system', content: systemPrompt },
-        { role: 'user', content: userPrompt },
+        { role: 'user', content: userContent },
       ],
     });
     const text = completion.choices[0]?.message?.content?.trim();
     if (!text) {
-      return { text: learning.promptText, model: 'gpt-4o-mini', enhanced: false };
+      return { text: learning.promptText, model, enhanced: false };
     }
-    return { text, model: 'gpt-4o-mini', enhanced: true };
+    return { text, model, enhanced: true };
   } catch (e) {
     console.warn('[insights] AI summarize failed, fallback to rule-based:', (e as Error).message);
     return { text: learning.promptText, model: 'gpt-4o-mini', enhanced: false };
