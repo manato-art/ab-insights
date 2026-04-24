@@ -1,7 +1,7 @@
 // GET /api/prompts/[genre]
 // ab-system が画像生成時に取得するプロンプトブロック配信。
 //   - 指定 genre の enabled=true ブロック
-//   - 共通ブロック ('共通' / '*' / 'common') も合わせて返す
+//   - 共通ブロック ('全て') も合わせて返す
 //   - priority 昇順でソート
 //   - 結合済みテキスト (combined) も返す
 import { NextResponse, type NextRequest } from 'next/server';
@@ -11,7 +11,7 @@ import { verifyApiToken } from '@/lib/auth';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-const COMMON_GENRES = ['共通', '*', 'common'];
+const COMMON_GENRES = ['全て'];
 
 export async function GET(
   req: NextRequest,

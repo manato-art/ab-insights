@@ -41,8 +41,41 @@ type SelectedRow = {
   downloaded: number;
   avgHitScore: number | null;
   appealTypes: Set<string>;
-  indexHistogram: Record<number, number>; // 1/2/3 の度数
+  indexHistogram: Record<number, number>; // 1/2/3 の度数(フォールバック用)
+  subLabelHistogram: Record<string, number>; // 「警告・ハッとさせる」等のサブラベル度数
 };
+
+// ab-system の 7 カテゴリ × 3 サブ のラベル定義
+// (ab-system `docs/superpowers/specs/2026-04-09-appeal-7categories-design.md` 準拠)
+const SUB_LABELS_BY_CATEGORY: Record<string, readonly [string, string, string]> = {
+  '課題解決・コンプレックス': ['警告・ハッとさせる', '共感・代弁', '原因の指摘'],
+  '理想の未来・ベネフィット': ['物理的・具体的な変化', '感情・メンタルの変化', 'ステータス・優越感'],
+  'オファー・お得感': ['ダイレクトな安さ', 'ハードルの低さ', '特典・付加価値'],
+  '実績・権威性': ['大衆の支持', '専門家・プロの推薦', 'ユーザーの熱量'],
+  '手軽さ・タイパ': ['時間の短縮', '労力の削減', '場所・環境の自由'],
+  '限定・緊急性': ['時間・期間の限定', '数量・人数の限定', '条件の限定'],
+  '新奇性・意外性': ['常識の破壊', 'トレンド・最新', '秘密・非公開'],
+};
+
+/**
+ * appealType(カテゴリラベル or 「第1優先：X、第2優先：Y」等の複合)と
+ * appealSelectedIndex(1/2/3) からサブラベルを解決。
+ * 未解決なら null(呼び出し側で「①」へフォールバック)。
+ */
+function resolveSubLabel(
+  appealType: string | null | undefined,
+  index: number | null | undefined,
+): string | null {
+  if (!appealType || !index || index < 1 || index > 3) return null;
+  // 完全一致
+  const exact = SUB_LABELS_BY_CATEGORY[appealType];
+  if (exact) return exact[index - 1];
+  // 部分一致(複合ラベル等)
+  for (const [cat, subs] of Object.entries(SUB_LABELS_BY_CATEGORY)) {
+    if (appealType.includes(cat)) return subs[index - 1];
+  }
+  return null;
+}
 
 type RewrittenRow = {
   originalText: string;
@@ -161,6 +194,7 @@ function aggregate(events: EventForStats[]): GenreStats[] {
             avgHitScore: null,
             appealTypes: new Set<string>(),
             indexHistogram: {},
+            subLabelHistogram: {},
           };
           sel.count += 1;
           if (e.downloaded) sel.downloaded += 1;
@@ -168,6 +202,11 @@ function aggregate(events: EventForStats[]): GenreStats[] {
           if (e.appealSelectedIndex) {
             sel.indexHistogram[e.appealSelectedIndex] =
               (sel.indexHistogram[e.appealSelectedIndex] ?? 0) + 1;
+            const subLabel = resolveSubLabel(e.appealType, e.appealSelectedIndex);
+            if (subLabel) {
+              sel.subLabelHistogram[subLabel] =
+                (sel.subLabelHistogram[subLabel] ?? 0) + 1;
+            }
           }
           if (e.hitScore !== null) {
             const prevAvg = sel.avgHitScore ?? 0;
@@ -384,7 +423,7 @@ export default async function AppealsPage({
                           平均 hit_score
                         </TableHead>
                         <TableHead className="text-right">
-                          選ばれた位置
+                          選ばれたサブ
                         </TableHead>
                         <TableHead className="w-[44px]"></TableHead>
                       </TableRow>
@@ -413,8 +452,8 @@ export default async function AppealsPage({
                               ? '—'
                               : row.avgHitScore.toFixed(2)}
                           </TableCell>
-                          <TableCell className="text-right text-xs font-mono">
-                            {formatIndexHistogram(row.indexHistogram)}
+                          <TableCell className="text-right text-xs">
+                            {formatSubLabelHistogram(row)}
                           </TableCell>
                           <TableCell className="text-right">
                             <DeleteRowButton
@@ -613,4 +652,27 @@ function formatIndexHistogram(hist: Record<number, number>): string {
     if (hist[i]) parts.push(`${['①', '②', '③'][i - 1]}${hist[i]}`);
   }
   return parts.length === 0 ? '—' : parts.join(' ');
+}
+
+/**
+ * サブラベルのヒストグラムを「ラベル名 ×回数」形式で。
+ * サブラベル未解決のものは ① ② ③ にフォールバック。
+ */
+function formatSubLabelHistogram(row: SelectedRow): string {
+  const subEntries = Object.entries(row.subLabelHistogram);
+  const resolvedCount = subEntries.reduce((sum, [, n]) => sum + n, 0);
+  const totalIndexed = Object.values(row.indexHistogram).reduce((a, b) => a + b, 0);
+  const unresolved = totalIndexed - resolvedCount;
+
+  const parts: string[] = subEntries
+    .sort((a, b) => b[1] - a[1])
+    .map(([label, n]) => `${label} ×${n}`);
+
+  // 一部カテゴリ不明なものは従来の ① 表記でフォールバック追加
+  if (unresolved > 0) {
+    const fallback = formatIndexHistogram(row.indexHistogram);
+    if (fallback !== '—') parts.push(`(${fallback})`);
+  }
+
+  return parts.length === 0 ? '—' : parts.join(' / ');
 }

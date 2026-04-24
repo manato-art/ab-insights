@@ -117,6 +117,7 @@ export async function POST(req: NextRequest) {
       const event = await tx.event.create({
         data: {
           abSystemUserId: body.abSystemUserId,
+          abSystemUserName: body.abSystemUserName ?? null,
           endpoint: body.endpoint,
           model: body.model ?? null,
           genre: body.genre ?? null,
@@ -138,6 +139,18 @@ export async function POST(req: NextRequest) {
           promptFull: body.promptFull ?? null,
           promptHash,
           imageCount,
+          // ② 文脈入力(データ保存のみ・プロンプト非注入)
+          campaignGoal: body.campaignGoal ?? null,
+          targetInterestsJson:
+            body.targetInterests && body.targetInterests.length > 0
+              ? JSON.stringify(body.targetInterests)
+              : null,
+          targetRegion: body.targetRegion ?? null,
+          targetIncomeRange: body.targetIncomeRange ?? null,
+          budgetRange: body.budgetRange ?? null,
+          targetCpa: body.targetCpa ?? null,
+          landingPageUrl: body.landingPageUrl ?? null,
+          cvPointType: body.cvPointType ?? null,
         },
       });
 

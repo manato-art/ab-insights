@@ -10,9 +10,10 @@ import { Button } from '@/components/ui/button';
 
 const ENDPOINT_OPTIONS = [
   { value: '', label: '全て' },
-  { value: 'generate-images', label: 'generate-images' },
-  { value: 'improve-images', label: 'improve-images' },
-  { value: 'generate-similar-one', label: 'generate-similar-one' },
+  { value: 'generate-images', label: '画像生成' },
+  { value: 'generate-similar-one', label: '横展開' },
+  { value: 'improve-images', label: '改善' },
+  { value: 'edit-region', label: 'AI編集' },
 ];
 
 const TRI_OPTIONS = [
@@ -21,12 +22,21 @@ const TRI_OPTIONS = [
   { value: '0', label: 'なし' },
 ];
 
+const PERIOD_CHIPS: { value: string; label: string }[] = [
+  { value: '', label: '全期間' },
+  { value: 'today', label: '本日' },
+  { value: 'week', label: '今週' },
+  { value: 'month', label: '今月' },
+];
+
 export function FilterBar({
   initial,
 }: {
   initial: {
     genre: string;
     endpoint: string;
+    user: string;
+    period: string;
     downloaded: string;
     horizontallyExpanded: string;
   };
@@ -73,7 +83,7 @@ export function FilterBar({
       </div>
 
       <div className="space-y-1.5">
-        <Label className="text-xs">エンドポイント</Label>
+        <Label className="text-xs">種別</Label>
         <select
           defaultValue={initial.endpoint}
           onChange={(e) => setParam('endpoint', e.currentTarget.value)}
@@ -85,6 +95,20 @@ export function FilterBar({
             </option>
           ))}
         </select>
+      </div>
+
+      <div className="space-y-1.5">
+        <Label className="text-xs">ユーザー</Label>
+        <Input
+          defaultValue={initial.user}
+          placeholder="(例: takeo)"
+          className="h-8 w-44"
+          onBlur={(e) => setParam('user', e.currentTarget.value.trim())}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter')
+              setParam('user', (e.target as HTMLInputElement).value.trim());
+          }}
+        />
       </div>
 
       <div className="space-y-1.5">
@@ -117,6 +141,26 @@ export function FilterBar({
             </option>
           ))}
         </select>
+      </div>
+
+      <div className="space-y-1.5">
+        <Label className="text-xs">期間</Label>
+        <div className="flex gap-1">
+          {PERIOD_CHIPS.map((c) => (
+            <button
+              key={c.value || 'all'}
+              type="button"
+              onClick={() => setParam('period', c.value)}
+              className={`h-8 px-3 rounded-md text-xs border transition ${
+                initial.period === c.value
+                  ? 'bg-primary text-primary-foreground border-primary'
+                  : 'border-input hover:bg-accent'
+              }`}
+            >
+              {c.label}
+            </button>
+          ))}
+        </div>
       </div>
 
       <div className="ml-auto">

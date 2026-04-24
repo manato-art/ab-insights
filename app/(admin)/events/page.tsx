@@ -3,6 +3,7 @@
 // - 行クリックで詳細 Dialog(client component で制御)
 import Link from 'next/link';
 import { prisma } from '@/lib/db';
+import { parsePeriod, periodStartDate } from '@/lib/period';
 import {
   Table,
   TableBody,
@@ -29,6 +30,8 @@ type SearchParams = {
   perPage?: string;
   genre?: string;
   endpoint?: string;
+  user?: string;
+  period?: string; // 'today' | 'week' | 'month'
   downloaded?: string;
   horizontallyExpanded?: string;
 };
@@ -47,14 +50,21 @@ export default async function EventsPage({
   );
 
   // --- where 構築 ---
+  const period = parsePeriod(sp.period);
+  const periodFrom = periodStartDate(period);
+
   const where: {
     genre?: string;
     endpoint?: string;
+    abSystemUserName?: { contains: string; mode: 'insensitive' };
+    createdAt?: { gte: Date };
     downloaded?: boolean;
     horizontallyExpanded?: boolean;
   } = {};
   if (sp.genre) where.genre = sp.genre;
   if (sp.endpoint) where.endpoint = sp.endpoint;
+  if (sp.user) where.abSystemUserName = { contains: sp.user, mode: 'insensitive' };
+  if (periodFrom) where.createdAt = { gte: periodFrom };
   if (sp.downloaded === '1') where.downloaded = true;
   if (sp.downloaded === '0') where.downloaded = false;
   if (sp.horizontallyExpanded === '1') where.horizontallyExpanded = true;
@@ -81,6 +91,7 @@ export default async function EventsPage({
   const events: EventDetailPayload[] = rows.map((r) => ({
     id: r.id,
     abSystemUserId: r.abSystemUserId,
+    abSystemUserName: r.abSystemUserName,
     endpoint: r.endpoint,
     model: r.model,
     createdAt: r.createdAt.toISOString(),
@@ -118,6 +129,31 @@ export default async function EventsPage({
       instruction: e.instruction,
       createdAt: e.createdAt.toISOString(),
     })),
+    // ① 信号粒度・評価
+    decisionTimeMs: r.decisionTimeMs,
+    regenerationReason: r.regenerationReason,
+    rating: r.rating,
+    ratingComment: r.ratingComment,
+    tagsJson: r.tagsJson,
+    // ② 文脈入力
+    campaignGoal: r.campaignGoal,
+    targetInterestsJson: r.targetInterestsJson,
+    targetRegion: r.targetRegion,
+    targetIncomeRange: r.targetIncomeRange,
+    budgetRange: r.budgetRange,
+    targetCpa: r.targetCpa,
+    landingPageUrl: r.landingPageUrl,
+    cvPointType: r.cvPointType,
+    // ⑤ 暗黙シグナル
+    sessionDurationMs: r.sessionDurationMs,
+    totalHoverMs: r.totalHoverMs,
+    zoomCount: r.zoomCount,
+    tabSwitchCount: r.tabSwitchCount,
+    comparisonViewMs: r.comparisonViewMs,
+    rightClickSaveCount: r.rightClickSaveCount,
+    // ⑥ ネガティブ学習
+    discardedAfterEdit: r.discardedAfterEdit,
+    regenerationDiffJson: r.regenerationDiffJson,
   }));
 
   const totalPages = Math.max(1, Math.ceil(total / perPage));
@@ -135,6 +171,8 @@ export default async function EventsPage({
         initial={{
           genre: sp.genre ?? '',
           endpoint: sp.endpoint ?? '',
+          user: sp.user ?? '',
+          period: period ?? '',
           downloaded: sp.downloaded ?? '',
           horizontallyExpanded: sp.horizontallyExpanded ?? '',
         }}
@@ -153,18 +191,19 @@ export default async function EventsPage({
           <TableHeader>
             <TableRow className="bg-muted/50">
               <TableHead className="w-[140px]">日時</TableHead>
-              <TableHead>endpoint</TableHead>
-              <TableHead>genre</TableHead>
+              <TableHead>ユーザー</TableHead>
+              <TableHead>種別</TableHead>
+              <TableHead>ジャンル</TableHead>
               <TableHead>訴求</TableHead>
               <TableHead className="text-right">枚数</TableHead>
               <TableHead>シグナル</TableHead>
-              <TableHead className="text-right">hitScore</TableHead>
+              <TableHead className="text-right">刺さり度</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {events.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={7} className="py-10 text-center text-muted-foreground">
+                <TableCell colSpan={8} className="py-10 text-center text-muted-foreground">
                   条件に合致するイベントがありません
                 </TableCell>
               </TableRow>
@@ -174,9 +213,21 @@ export default async function EventsPage({
                   <TableCell className="font-mono text-xs">
                     {formatShort(ev.createdAt)}
                   </TableCell>
+                  <TableCell className="max-w-[180px]">
+                    <span
+                      className="truncate block text-sm"
+                      title={ev.abSystemUserName ?? ev.abSystemUserId}
+                    >
+                      {ev.abSystemUserName ?? (
+                        <span className="text-muted-foreground font-mono text-xs">
+                          {ev.abSystemUserId}
+                        </span>
+                      )}
+                    </span>
+                  </TableCell>
                   <TableCell>
-                    <Badge variant="secondary" className="font-mono">
-                      {ev.endpoint}
+                    <Badge variant="secondary">
+                      {endpointLabel(ev.endpoint)}
                     </Badge>
                   </TableCell>
                   <TableCell>
@@ -291,6 +342,16 @@ function Pagination({
 // ------------------------------------------------------------
 function clamp(n: number, min: number, max: number) {
   return Math.min(Math.max(n, min), max);
+}
+
+function endpointLabel(endpoint: string): string {
+  const m: Record<string, string> = {
+    'generate-images': '画像生成',
+    'generate-similar-one': '横展開',
+    'improve-images': '改善',
+    'edit-region': 'AI編集',
+  };
+  return m[endpoint] ?? endpoint;
 }
 
 function formatShort(iso: string) {

@@ -1,0 +1,181 @@
+// ローカル開発用 SQLite スキーマ(prod は schema.prisma の Postgres を使う)
+// 本番スキーマと同じモデル定義だが provider のみ sqlite。
+// 使い方:
+//   npm run db:local:push  # SQLite DB 作成・マイグレーション
+//   npm run db:local:seed  # admin + API token 発行
+//   npm run dev            # .env.local の DATABASE_URL=file:... を参照
+//
+// 注意: schema.prisma を編集したらこちらも手動で同期すること。
+// 主要な差分: provider = "sqlite", url = "file:./prisma/local.db"
+
+generator client {
+  provider = "prisma-client"
+  output   = "../app/generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+model Admin {
+  id           Int      @id @default(autoincrement())
+  passwordHash String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model Session {
+  id        String   @id
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([expiresAt])
+}
+
+model ApiToken {
+  id         Int       @id @default(autoincrement())
+  name       String
+  tokenHash  String    @unique
+  createdAt  DateTime  @default(now())
+  lastUsedAt DateTime?
+  active     Boolean   @default(true)
+}
+
+model Setting {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt
+}
+
+model Event {
+  id Int @id @default(autoincrement())
+  abSystemUserId String
+  abSystemUserName String?
+  endpoint  String
+  model     String?
+  createdAt DateTime @default(now())
+
+  genre              String?
+  subGenre           String?
+  gender             String?
+  ageGroup           String?
+  platform           String?
+  appealType         String?
+  appealText         String?
+  appealOriginalText String?
+  appealSelectedIndex Int?
+  additionalNote     String?
+  aiEditInstructionsJson String?
+  styleAxesJson      String?
+  urlAnalysisSummary String?
+  promptFull         String?
+  promptHash         String?
+
+  imageCount           Int     @default(0)
+  downloaded           Boolean @default(false)
+  horizontallyExpanded Boolean @default(false)
+  aiEdited             Boolean @default(false)
+  regeneratedCount     Int     @default(0)
+  hitScore             Float?
+
+  // ① 信号粒度・評価
+  decisionTimeMs     Int?
+  regenerationReason String?
+  rating             Int?
+  ratingComment      String?
+  tagsJson           String?
+
+  // ② 文脈入力
+  campaignGoal        String?
+  targetInterestsJson String?
+  targetRegion        String?
+  targetIncomeRange   String?
+  budgetRange         String?
+  targetCpa           Float?
+  landingPageUrl      String?
+  cvPointType         String?
+
+  // ⑤ 暗黙シグナル(Event レベル集計)
+  sessionDurationMs    Int?
+  totalHoverMs         Int?
+  zoomCount            Int?
+  tabSwitchCount       Int?
+  comparisonViewMs     Int?
+  rightClickSaveCount  Int?
+
+  // ⑥ ネガティブ学習
+  discardedAfterEdit   Boolean @default(false)
+  regenerationDiffJson String?
+
+  images  EventImage[]
+  aiEdits EventAiEdit[]
+
+  @@index([genre, createdAt])
+  @@index([abSystemUserId, createdAt])
+  @@index([downloaded, horizontallyExpanded])
+  @@index([campaignGoal, genre])
+  @@index([rating])
+}
+
+model EventImage {
+  id         Int     @id @default(autoincrement())
+  event      Event   @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  eventId    Int
+  imageIndex Int
+  thumbnail  Bytes?
+  fullHash   String?
+  downloaded Boolean @default(false)
+  aiEdited   Boolean @default(false)
+
+  // ① 画像別 DL 詳細
+  downloadedAt DateTime?
+  downloadRank Int?
+
+  // ⑤ 暗黙シグナル(画像単位)
+  hoverMs   Int?
+  viewCount Int?
+
+  @@index([eventId])
+}
+
+model EventAiEdit {
+  id          Int      @id @default(autoincrement())
+  event       Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  eventId     Int
+  kind        String
+  instruction String
+  createdAt   DateTime @default(now())
+
+  // ⑥ ネガティブ学習
+  discarded   Boolean  @default(false)
+
+  @@index([eventId])
+  @@index([kind])
+}
+
+model GenrePrompt {
+  id        Int      @id @default(autoincrement())
+  genre     String
+  blockName String
+  content   String
+  enabled   Boolean  @default(true)
+  priority  Int      @default(0)
+  note      String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([genre, enabled, priority])
+}
+
+model GenreInsight {
+  id                 Int      @id @default(autoincrement())
+  genre              String   @unique
+  sampleSize         Int      @default(0)
+  downloadRate       Float?
+  expansionRate      Float?
+  avgHitScore        Float?
+  topAppealTypesJson String?
+  topStyleAxesJson   String?
+  editKindStatsJson  String?
+  updatedAt          DateTime @updatedAt
+}

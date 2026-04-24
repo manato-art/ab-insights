@@ -59,6 +59,8 @@ model Event {
   id Int @id @default(autoincrement())
   /// ab-system 側のユーザー ID (opaque 文字列・匿名化)
   abSystemUserId String
+  /// ab-system 側の表示名 (displayName || username、無ければ null)
+  abSystemUserName String?
   /// ab-system の生成エンドポイント: 'generate-images' | 'improve-images' | etc.
   endpoint  String
   model     String? // gemini-3.1-flash-image-preview 等
@@ -91,12 +93,59 @@ model Event {
   regeneratedCount     Int     @default(0)
   hitScore             Float? // 0〜1 で自動計算
 
+  // ===== ① 信号粒度・評価 (後追いで signal API で更新される) =====
+  /// 生成完了 → 初回 DL までの経過時間(ms)。未DLなら null。
+  decisionTimeMs   Int?
+  /// 再生成の理由ラベル(client の UI で選択。'color'|'person'|'copy'|'layout'|'appeal'|'other' 等)
+  regenerationReason String?
+  /// ユーザー明示評価 1-5。DL 後に UI で付ける。
+  rating           Int?
+  /// 明示評価の短文コメント(任意)
+  ratingComment    String?
+  /// タグ(JSON 配列)。例: ["保守的","トレンド"]
+  tagsJson         String?
+
+  // ===== ② 文脈入力 (生成時に ab-system の form から来る・プロンプトには入れず保存だけ) =====
+  /// キャンペーン目的: 'cv'|'awareness'|'lead'|'retargeting'
+  campaignGoal       String?
+  /// ターゲットの興味関心(JSON 配列)
+  targetInterestsJson String?
+  targetRegion       String?
+  targetIncomeRange  String?
+  budgetRange        String?
+  targetCpa          Float?
+  landingPageUrl     String?
+  /// CV ポイント種別: 'purchase'|'signup'|'call'|'download'|'other'
+  cvPointType        String?
+
+  // ===== ⑤ 暗黙シグナル (セッション終了時にバッチで送られる集計値) =====
+  /// ユーザーがこの生成画面に滞在した合計時間(ms)
+  sessionDurationMs  Int?
+  /// 全画像へのホバー合計時間(ms)。個別は EventImage.hoverMs 参照。
+  totalHoverMs       Int?
+  /// 拡大表示された回数(合計)
+  zoomCount          Int?
+  /// タブが切り替わった回数(離脱気味を測る)
+  tabSwitchCount     Int?
+  /// 比較画面の滞在時間(ms)
+  comparisonViewMs   Int?
+  /// 右クリック保存された回数(UI の DL ボタンを使わない裏ルート DL)
+  rightClickSaveCount Int?
+
+  // ===== ⑥ ネガティブ学習 =====
+  /// AI 編集後に結果を破棄した (= 編集しても直らなかった)
+  discardedAfterEdit Boolean @default(false)
+  /// 再生成で何を変えたか差分情報(JSON)
+  regenerationDiffJson String?
+
   images  EventImage[]
   aiEdits EventAiEdit[]
 
   @@index([genre, createdAt])
   @@index([abSystemUserId, createdAt])
   @@index([downloaded, horizontallyExpanded])
+  @@index([campaignGoal, genre])
+  @@index([rating])
 }
 
 /// 各イベントで生成された画像(64x64 サムネ相当)
@@ -110,6 +159,18 @@ model EventImage {
   downloaded Boolean @default(false)
   aiEdited   Boolean @default(false)
 
+  // ===== ① 画像別 DL 詳細 =====
+  /// この画像が DL された時刻(未 DL なら null)
+  downloadedAt DateTime?
+  /// 同一 Event 内で DL された順位(1 = 最初、null = 未 DL)
+  downloadRank Int?
+
+  // ===== ⑤ 暗黙シグナル(画像単位) =====
+  /// この画像にホバーした合計時間(ms)
+  hoverMs   Int?
+  /// この画像を拡大表示した回数
+  viewCount Int?
+
   @@index([eventId])
 }
 
@@ -121,6 +182,10 @@ model EventAiEdit {
   kind        String // 'text' | 'person' | 'background' | 'color' | 'product_swap' | 'remove'
   instruction String
   createdAt   DateTime @default(now())
+
+  // ===== ⑥ ネガティブ学習 =====
+  /// この編集指示の結果が最終的に破棄されたか(= 直らなかった)
+  discarded   Boolean  @default(false)
 
   @@index([eventId])
   @@index([kind])

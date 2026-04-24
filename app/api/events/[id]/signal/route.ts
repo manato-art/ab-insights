@@ -83,9 +83,23 @@ export async function POST(
           );
           if (!targetImage) continue; // 存在しない imageIndex は無視
 
-          const data: { downloaded?: boolean; aiEdited?: boolean } = {};
+          const data: {
+            downloaded?: boolean;
+            aiEdited?: boolean;
+            downloadedAt?: Date;
+            downloadRank?: number;
+            hoverMs?: number;
+            viewCount?: number;
+          } = {};
           if (sig.downloaded !== undefined) data.downloaded = sig.downloaded;
           if (sig.aiEdited !== undefined) data.aiEdited = sig.aiEdited;
+          if (sig.downloadedAt) {
+            const parsed = new Date(sig.downloadedAt);
+            if (!isNaN(parsed.getTime())) data.downloadedAt = parsed;
+          }
+          if (sig.downloadRank != null) data.downloadRank = sig.downloadRank;
+          if (sig.hoverMs != null) data.hoverMs = sig.hoverMs;
+          if (sig.viewCount != null) data.viewCount = sig.viewCount;
           if (Object.keys(data).length === 0) continue;
 
           await tx.eventImage.update({
@@ -130,6 +144,13 @@ export async function POST(
 
       const newScore = computeHitScore(merged);
 
+      // tags は配列で送られるので JSON 化
+      const tagsJson =
+        body.tags && body.tags.length > 0 ? JSON.stringify(body.tags) : undefined;
+      const regenerationDiffJson = body.regenerationDiff
+        ? JSON.stringify(body.regenerationDiff)
+        : undefined;
+
       // Event 更新 (undefined は省略 → Prisma が無視)
       await tx.event.update({
         where: { id: eventId },
@@ -139,6 +160,22 @@ export async function POST(
           aiEdited: aiEditedToWrite,
           regeneratedCount: body.regeneratedCount,
           hitScore: newScore,
+          // ① 信号粒度・評価 (late update)
+          decisionTimeMs: body.decisionTimeMs,
+          regenerationReason: body.regenerationReason,
+          rating: body.rating,
+          ratingComment: body.ratingComment,
+          tagsJson,
+          // ⑤ 暗黙シグナル
+          sessionDurationMs: body.sessionDurationMs,
+          totalHoverMs: body.totalHoverMs,
+          zoomCount: body.zoomCount,
+          tabSwitchCount: body.tabSwitchCount,
+          comparisonViewMs: body.comparisonViewMs,
+          rightClickSaveCount: body.rightClickSaveCount,
+          // ⑥ ネガティブ学習
+          discardedAfterEdit: body.discardedAfterEdit,
+          regenerationDiffJson,
         },
       });
 
@@ -150,6 +187,7 @@ export async function POST(
               eventId,
               kind: edit.kind,
               instruction: edit.instruction,
+              discarded: edit.discarded ?? false,
             },
           });
           // imageIndex が指定されていれば個別画像も aiEdited にマーク

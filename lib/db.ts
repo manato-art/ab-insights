@@ -6,19 +6,31 @@
 //   $transaction 等で `this` が壊れて P2028 "Transaction not found" が起きる。
 import { PrismaClient } from '@/app/generated/prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
+import { PrismaBetterSqlite3 } from '@prisma/adapter-better-sqlite3';
 
 const globalForPrisma = globalThis as unknown as {
   prisma: PrismaClient | undefined;
 };
 
 function createPrismaClient(): PrismaClient {
-  // Neon の pooled URL (pgbouncer 経由) は Prisma のトランザクションと相性が悪いため
-  // unpooled URL(直接接続)を優先する。ローカルで UNPOOLED が無い場合は DATABASE_URL にフォールバック。
-  const url = process.env.DATABASE_URL_UNPOOLED || process.env.DATABASE_URL;
-  if (!url) {
+  // まず DATABASE_URL を見る。file:... なら SQLite 確定(ローカル開発用)。
+  // Postgres の場合だけ、トランザクション対応のため UNPOOLED を優先する。
+  const primary = process.env.DATABASE_URL;
+  if (primary && primary.startsWith('file:')) {
+    const filePath = primary.replace(/^file:/, '');
+    const adapter = new PrismaBetterSqlite3({ url: 'file:' + filePath });
+    return new PrismaClient({
+      adapter,
+      log: process.env.NODE_ENV === 'development' ? ['warn', 'error'] : ['error'],
+    });
+  }
+
+  const urlRaw = process.env.DATABASE_URL_UNPOOLED || primary;
+  if (!urlRaw) {
     throw new Error('[db] DATABASE_URL is not set. Vercel+Neon を設定するか .env に Postgres 接続文字列を記述してください');
   }
-  const adapter = new PrismaPg({ connectionString: url });
+
+  const adapter = new PrismaPg({ connectionString: urlRaw });
   return new PrismaClient({
     adapter,
     log: process.env.NODE_ENV === 'development' ? ['warn', 'error'] : ['error'],

@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useTransition } from 'react';
+import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import {
   uploadGenreLearning,
@@ -11,10 +12,13 @@ import {
   previewGenreLearning,
   type UploadResult,
 } from './actions';
+import { renameGenre, resetGenreLearning } from '../prompts/genre-admin-actions';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { LearnedEditorButton } from './learned-editor';
 
 type ThumbItem = {
@@ -42,9 +46,14 @@ type GenreStat = {
 };
 
 export default function UploadPanel({ stats }: { stats: GenreStat[] }) {
+  const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [resultDialog, setResultDialog] = useState<UploadResult | UploadResult[] | null>(null);
+  const [renameTarget, setRenameTarget] = useState<string | null>(null);
+  const [resetTarget, setResetTarget] = useState<GenreStat | null>(null);
+
+  const existingGenres = stats.map((s) => s.genre);
 
   function toggleSelect(genre: string) {
     setSelected((prev) => {
@@ -196,7 +205,7 @@ export default function UploadPanel({ stats }: { stats: GenreStat[] }) {
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
-              {/* 保存された画像 — DL / 完成ダウンロードが押されたもののみ(赤いモヤ強調) */}
+              {/* 保存された画像 — DL / 完成ダウンロードが押されたもののみ(赤いモヤ強調・3 行までで残りスクロール) */}
               {(() => {
                 const savedThumbs = s.thumbs.filter((t) => t.downloaded);
                 if (savedThumbs.length === 0) return null;
@@ -205,25 +214,29 @@ export default function UploadPanel({ stats }: { stats: GenreStat[] }) {
                     <div className="font-mono text-red-500 text-[10px] uppercase tracking-wider mb-1.5">
                       保存された画像 ({savedThumbs.length}{savedThumbs.length >= 24 ? '+' : ''} 枚 / hit 順)
                     </div>
-                    <div className="grid grid-cols-4 sm:grid-cols-6 gap-1.5">
-                      {savedThumbs.map((t, i) => (
-                        <ThumbTile key={`${t.eventId}-${t.imageIndex}-${i}`} thumb={t} />
-                      ))}
+                    <div className="max-h-[288px] overflow-y-auto pr-1 rounded-md">
+                      <div className="grid grid-cols-4 sm:grid-cols-6 gap-1.5">
+                        {savedThumbs.map((t, i) => (
+                          <ThumbTile key={`${t.eventId}-${t.imageIndex}-${i}`} thumb={t} />
+                        ))}
+                      </div>
                     </div>
                   </div>
                 );
               })()}
 
-              {/* すべての生成画像 — ジャンル内で記録された全サムネイル */}
+              {/* すべての生成画像 — ジャンル内で記録された全サムネイル(3 行までで残りスクロール) */}
               {s.thumbs.length > 0 && (
                 <div>
                   <div className="font-mono text-muted-foreground text-[10px] uppercase tracking-wider mb-1.5">
                     すべての生成画像 ({s.thumbs.length}{s.thumbs.length >= 24 ? '+' : ''} 枚 / hit 順)
                   </div>
-                  <div className="grid grid-cols-4 sm:grid-cols-6 gap-1.5">
-                    {s.thumbs.map((t, i) => (
-                      <ThumbTile key={`all-${t.eventId}-${t.imageIndex}-${i}`} thumb={t} />
-                    ))}
+                  <div className="max-h-[288px] overflow-y-auto pr-1 rounded-md">
+                    <div className="grid grid-cols-4 sm:grid-cols-6 gap-1.5">
+                      {s.thumbs.map((t, i) => (
+                        <ThumbTile key={`all-${t.eventId}-${t.imageIndex}-${i}`} thumb={t} />
+                      ))}
+                    </div>
                   </div>
                 </div>
               )}
@@ -278,6 +291,27 @@ export default function UploadPanel({ stats }: { stats: GenreStat[] }) {
                     削除
                   </Button>
                 )}
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="ml-auto"
+                  onClick={() => setRenameTarget(s.genre)}
+                  disabled={pending}
+                >
+                  名称変更
+                </Button>
+                {s.eventCount > 0 && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                    onClick={() => setResetTarget(s)}
+                    disabled={pending}
+                    title="このジャンルの Event を全削除してゼロから再学習"
+                  >
+                    学習リセット
+                  </Button>
+                )}
               </div>
               {s.eventCount === 0 && (
                 <p className="text-xs text-muted-foreground">
@@ -288,6 +322,55 @@ export default function UploadPanel({ stats }: { stats: GenreStat[] }) {
           </Card>
         ))}
       </div>
+
+      {/* 名称変更 Dialog */}
+      <RenameDialog
+        target={renameTarget}
+        existingGenres={existingGenres}
+        pending={pending}
+        onClose={() => setRenameTarget(null)}
+        onSubmit={(newName) => {
+          const oldName = renameTarget;
+          if (!oldName) return;
+          startTransition(async () => {
+            const res = await renameGenre(oldName, newName);
+            if (res.success) {
+              toast.success(
+                res.merged
+                  ? `${oldName} → ${newName} に合致(Event ${res.movedEvents} 件 / Prompt ${res.movedPrompts} 件統合)`
+                  : `${oldName} → ${newName} に改名(Event ${res.movedEvents} 件 / Prompt ${res.movedPrompts} 件)`,
+              );
+              setRenameTarget(null);
+              router.refresh();
+            } else {
+              toast.error(res.error || '名称変更に失敗しました');
+            }
+          });
+        }}
+      />
+
+      {/* 学習リセット Dialog */}
+      <ResetDialog
+        target={resetTarget}
+        pending={pending}
+        onClose={() => setResetTarget(null)}
+        onConfirm={() => {
+          const t = resetTarget;
+          if (!t) return;
+          startTransition(async () => {
+            const res = await resetGenreLearning(t.genre);
+            if (res.success) {
+              toast.success(
+                `${t.genre} の学習をリセット(Event ${res.deletedEvents} 件 / Prompt ${res.deletedPrompts} 件削除)`,
+              );
+              setResetTarget(null);
+              router.refresh();
+            } else {
+              toast.error(res.error || 'リセットに失敗しました');
+            }
+          });
+        }}
+      />
 
       {/* アップロード結果 Dialog */}
       <Dialog open={resultDialog != null} onOpenChange={() => setResultDialog(null)}>
@@ -383,6 +466,196 @@ function ThumbTile({ thumb }: { thumb: ThumbItem }) {
           )}
         </DialogContent>
       </Dialog>
+    </>
+  );
+}
+
+function RenameDialog({
+  target,
+  existingGenres,
+  pending,
+  onClose,
+  onSubmit,
+}: {
+  target: string | null;
+  existingGenres: string[];
+  pending: boolean;
+  onClose: () => void;
+  onSubmit: (newName: string) => void;
+}) {
+  return (
+    <Dialog open={target != null} onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="max-w-md">
+        {target && (
+          <RenameDialogInner
+            key={target}
+            currentName={target}
+            existingGenres={existingGenres}
+            pending={pending}
+            onClose={onClose}
+            onSubmit={onSubmit}
+          />
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function RenameDialogInner({
+  currentName,
+  existingGenres,
+  pending,
+  onClose,
+  onSubmit,
+}: {
+  currentName: string;
+  existingGenres: string[];
+  pending: boolean;
+  onClose: () => void;
+  onSubmit: (newName: string) => void;
+}) {
+  const [value, setValue] = useState(currentName);
+  const trimmed = value.trim();
+  const wouldMerge =
+    trimmed.length > 0 &&
+    trimmed !== currentName &&
+    existingGenres.includes(trimmed);
+  const canSubmit = trimmed.length > 0 && trimmed !== currentName && !pending;
+
+  return (
+    <>
+      <DialogHeader>
+        <DialogTitle>ジャンル名を変更</DialogTitle>
+        <DialogDescription>
+          既に同じ名称のジャンルがあれば自動で合致(マージ)されます。
+        </DialogDescription>
+      </DialogHeader>
+      <div className="space-y-3">
+        <div className="space-y-1.5">
+          <Label className="text-xs text-muted-foreground">変更前</Label>
+          <div className="text-sm font-mono p-2 bg-muted rounded-md break-all">
+            {currentName}
+          </div>
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor="rename-input-upload" className="text-xs">
+            新しい名称
+          </Label>
+          <Input
+            id="rename-input-upload"
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+            placeholder="新しいジャンル名"
+            autoFocus
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && canSubmit) onSubmit(trimmed);
+            }}
+          />
+          {wouldMerge && (
+            <p className="text-xs text-amber-600">
+              ⚠ 既存の「{trimmed}」に合致されます(Event / Prompt をマージ)
+            </p>
+          )}
+        </div>
+      </div>
+      <DialogFooter>
+        <Button variant="outline" onClick={onClose} disabled={pending}>
+          キャンセル
+        </Button>
+        <Button onClick={() => onSubmit(trimmed)} disabled={!canSubmit}>
+          {wouldMerge ? '合致して統合' : '変更'}
+        </Button>
+      </DialogFooter>
+    </>
+  );
+}
+
+function ResetDialog({
+  target,
+  pending,
+  onClose,
+  onConfirm,
+}: {
+  target: GenreStat | null;
+  pending: boolean;
+  onClose: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <Dialog open={target != null} onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="max-w-md">
+        {target && (
+          <ResetDialogInner
+            key={target.genre}
+            target={target}
+            pending={pending}
+            onClose={onClose}
+            onConfirm={onConfirm}
+          />
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function ResetDialogInner({
+  target,
+  pending,
+  onClose,
+  onConfirm,
+}: {
+  target: GenreStat;
+  pending: boolean;
+  onClose: () => void;
+  onConfirm: () => void;
+}) {
+  const [confirmText, setConfirmText] = useState('');
+  const canSubmit = confirmText.trim() === target.genre && !pending;
+
+  return (
+    <>
+      <DialogHeader>
+        <DialogTitle className="text-destructive">学習リセット</DialogTitle>
+        <DialogDescription>
+          このジャンルの Event と全 Prompt ブロックを削除し、ゼロから再学習できる状態にします。
+          <strong className="text-destructive block mt-1">
+            この操作は元に戻せません。
+          </strong>
+        </DialogDescription>
+      </DialogHeader>
+      <div className="space-y-3">
+        <div className="rounded-md border border-destructive/30 bg-destructive/5 p-3 space-y-1 text-sm">
+          <div className="font-semibold">{target.genre}</div>
+          <div className="text-xs text-muted-foreground">
+            Event <span className="font-mono">{target.eventCount}</span> 件
+            {' / '}DL <span className="font-mono">{target.downloaded}</span>
+            {' / '}横展開 <span className="font-mono">{target.expanded}</span>
+            {target.uploaded && ' / 学習ブロックあり'}
+          </div>
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor="reset-confirm-upload" className="text-xs">
+            確認のため、ジャンル名「
+            <span className="font-mono font-semibold">{target.genre}</span>
+            」を入力してください
+          </Label>
+          <Input
+            id="reset-confirm-upload"
+            value={confirmText}
+            onChange={(e) => setConfirmText(e.target.value)}
+            placeholder={target.genre}
+            autoFocus
+          />
+        </div>
+      </div>
+      <DialogFooter>
+        <Button variant="outline" onClick={onClose} disabled={pending}>
+          キャンセル
+        </Button>
+        <Button variant="destructive" onClick={onConfirm} disabled={!canSubmit}>
+          リセットする
+        </Button>
+      </DialogFooter>
     </>
   );
 }

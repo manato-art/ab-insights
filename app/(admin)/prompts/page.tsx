@@ -2,6 +2,7 @@
 // - GenrePrompt を genre 毎にタブで表示
 // - ブロックカードでは enabled / priority / 上下移動 / 編集 / 削除 を提供
 // - ページ下部に「ab-system が取得するプレビュー」を表示
+import Link from 'next/link';
 import { prisma } from '@/lib/db';
 import {
   Card,
@@ -21,11 +22,17 @@ import {
   MoveButtons,
   type PromptBlock,
 } from './prompt-editor';
+import { GeneratePromptPanel } from './generate-panel';
 
 export const metadata = { title: 'プロンプト管理 — ab-insights' };
 
+// Vision 付き自動更新が最大 50 秒程度かかる想定のため、Server Action のタイムアウトを延長。
+// Hobby は 60s 上限、Pro は 300s。Next.js は環境に応じて自動で丸める。
+export const maxDuration = 90;
+
 // デフォルトで表示するジャンル(未登録でもタブを出しておく)
-const DEFAULT_GENRES = ['共通', '化粧品', 'サプリ', 'アパレル'];
+// 「全て」はすべてのジャンル共通のプロンプトブロックを置く場所(ab-system が常に連結する)。
+const DEFAULT_GENRES = ['全て'];
 
 export default async function PromptsPage({
   searchParams,
@@ -34,9 +41,18 @@ export default async function PromptsPage({
 }) {
   const { genre: selectedGenre } = await searchParams;
 
-  const allBlocks = await prisma.genrePrompt.findMany({
-    orderBy: [{ genre: 'asc' }, { priority: 'asc' }, { id: 'asc' }],
-  });
+  // GenrePrompt と Event.genre の両方をまとめて取得
+  const [allBlocks, eventGenreRows] = await Promise.all([
+    prisma.genrePrompt.findMany({
+      orderBy: [{ genre: 'asc' }, { priority: 'asc' }, { id: 'asc' }],
+    }),
+    // Event に記録された全ジャンル(GenrePrompt が未登録でもタブに出す)
+    prisma.event.groupBy({
+      by: ['genre'],
+      where: { genre: { not: null } },
+      _count: { _all: true },
+    }),
+  ]);
 
   // genre ごとに group by
   const byGenre = new Map<string, PromptBlock[]>();
@@ -46,11 +62,27 @@ export default async function PromptsPage({
     byGenre.set(b.genre, arr);
   }
 
-  // タブ表示対象: デフォルト + 既存に存在する未登録ジャンル
+  const eventGenres = eventGenreRows
+    .map((r) => r.genre)
+    .filter((g): g is string => !!g);
+
+  // タブ表示対象:
+  // - DEFAULT_GENRES (「全て」) は常に表示
+  // - 手動/自動問わずブロックが 1 件以上あるジャンル
+  // - Event が記録されたジャンル(プロンプト更新候補として)
+  // - URL で指定中のジャンル(存在しない名前でも飛んできたら表示)
+  // 空(ブロックなし & Event なし)の placeholder は出さない。
   const tabGenres = Array.from(
-    new Set([...DEFAULT_GENRES, ...Array.from(byGenre.keys())]),
+    new Set([
+      ...DEFAULT_GENRES,
+      ...Array.from(byGenre.keys()),
+      ...eventGenres,
+      ...(selectedGenre ? [selectedGenre] : []),
+    ]),
   );
-  const existingGenres = Array.from(byGenre.keys()).sort();
+  const existingGenres = Array.from(
+    new Set([...Array.from(byGenre.keys()), ...eventGenres]),
+  ).sort();
 
   // クエリで genre 指定があればそれを、無ければ先頭
   const defaultTab =
@@ -90,8 +122,11 @@ export default async function PromptsPage({
 
         {tabGenres.map((g) => {
           const blocks = byGenre.get(g) ?? [];
+          const isAllTab = g === '全て';
           return (
             <TabsContent key={g} value={g} className="space-y-4 pt-2">
+              <GeneratePromptPanel genre={g} existingGenres={existingGenres} />
+
               {blocks.length === 0 ? (
                 <EmptyState genre={g} existingGenres={existingGenres} />
               ) : (
@@ -107,6 +142,17 @@ export default async function PromptsPage({
                 </div>
               )}
 
+              {/* 「全て」タブ: 各ジャンルの概覧を大きな外枠で囲んで表示 */}
+              {isAllTab && (
+                <>
+                  <Separator className="my-6" />
+                  <GenreOverview
+                    byGenre={byGenre}
+                    eventGenres={eventGenres}
+                  />
+                </>
+              )}
+
               <Separator className="my-6" />
 
               {/* ab-system が取得する連結プレビュー */}
@@ -116,6 +162,93 @@ export default async function PromptsPage({
         })}
       </Tabs>
     </div>
+  );
+}
+
+/**
+ * 「全て」タブで表示する各ジャンル概覧。
+ * 大きな外枠の Card でラップし、中に小さい Card を並べる。
+ * 編集は各ジャンルの個別タブへ誘導(Link)。
+ */
+function GenreOverview({
+  byGenre,
+  eventGenres,
+}: {
+  byGenre: Map<string, PromptBlock[]>;
+  eventGenres: string[];
+}) {
+  const genres = Array.from(
+    new Set([...byGenre.keys(), ...eventGenres]),
+  )
+    .filter((g) => g !== '全て')
+    .sort();
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>各ジャンルのプロンプト一覧</CardTitle>
+        <CardDescription>
+          ジャンル個別のブロックをここから確認できます。編集は各ジャンルのタブへ移動してください。
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        {genres.length === 0 ? (
+          <div className="text-sm text-muted-foreground text-center py-6">
+            ジャンル固有のブロックはまだありません
+          </div>
+        ) : (
+          <div className="grid gap-3 md:grid-cols-2">
+            {genres.map((g) => {
+              const gBlocks = byGenre.get(g) ?? [];
+              return (
+                <Link
+                  key={g}
+                  href={`/prompts?genre=${encodeURIComponent(g)}`}
+                  className="block rounded-lg border bg-card hover:bg-accent/50 transition p-3 space-y-2"
+                >
+                  <div className="flex items-center gap-2">
+                    <span className="font-semibold">{g}</span>
+                    <Badge variant="secondary" className="text-[10px]">
+                      {gBlocks.length} ブロック
+                    </Badge>
+                  </div>
+                  {gBlocks.length === 0 ? (
+                    <p className="text-xs text-muted-foreground">
+                      ブロック未登録(Event あり)
+                    </p>
+                  ) : (
+                    <div className="space-y-1">
+                      {gBlocks.map((b) => (
+                        <div
+                          key={b.id}
+                          className="text-xs border-l-2 border-muted pl-2 py-0.5"
+                        >
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="font-medium">{b.blockName}</span>
+                            <Badge variant="outline" className="text-[9px] font-mono">
+                              p{b.priority}
+                            </Badge>
+                            {!b.enabled && (
+                              <Badge variant="outline" className="text-[9px]">
+                                無効
+                              </Badge>
+                            )}
+                          </div>
+                          <div className="text-muted-foreground truncate mt-0.5">
+                            {b.content.slice(0, 70)}
+                            {b.content.length > 70 ? '…' : ''}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </Link>
+              );
+            })}
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 
@@ -148,7 +281,12 @@ function BlockCard({
   isLast: boolean;
 }) {
   return (
-    <Card size="sm" className={block.enabled ? '' : 'opacity-60'}>
+    <Card
+      size="sm"
+      className={`transition-colors hover:bg-accent/30 ${
+        block.enabled ? '' : 'opacity-60'
+      }`}
+    >
       <CardHeader>
         <div className="flex items-start gap-3">
           <div className="flex-1 min-w-0">

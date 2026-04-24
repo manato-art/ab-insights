@@ -4,6 +4,7 @@
 // - ジャンル別テーブル
 // - 直近イベント 5 件
 
+import Link from 'next/link';
 import { prisma } from '@/lib/db';
 import {
   Card,
@@ -23,6 +24,7 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { getLearningEnabled } from './settings-helpers';
 import LearningToggle from './learning-toggle';
+import { parsePeriod, periodStartDate, type Period } from '@/lib/period';
 
 export const dynamic = 'force-dynamic';
 
@@ -59,27 +61,29 @@ function formatDate(d: Date): string {
 // データ取得
 // ============================================================
 
-async function getDashboardData() {
-  const now = new Date();
-  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+async function getDashboardData(period: Period) {
+  const periodFrom = periodStartDate(period);
+  const rangeFilter = periodFrom ? { createdAt: { gte: periodFrom } } : {};
 
   const [
     totalEvents,
-    monthEvents,
+    rangeEvents,
     downloadedTotal,
     genreGroups,
     recentEvents,
     learningEnabled,
   ] = await Promise.all([
     prisma.event.count(),
-    prisma.event.count({ where: { createdAt: { gte: monthStart } } }),
-    prisma.event.count({ where: { downloaded: true } }),
+    prisma.event.count({ where: rangeFilter }),
+    prisma.event.count({ where: { ...rangeFilter, downloaded: true } }),
     prisma.event.groupBy({
       by: ['genre'],
+      where: rangeFilter,
       _count: { _all: true },
       orderBy: { _count: { id: 'desc' } },
     }),
     prisma.event.findMany({
+      where: rangeFilter,
       orderBy: { createdAt: 'desc' },
       take: 5,
       select: {
@@ -96,7 +100,7 @@ async function getDashboardData() {
   // ジャンル別の詳細(downloaded/expanded/edited/avgHit)は個別クエリで
   const genreRows: GenreRow[] = await Promise.all(
     genreGroups.map(async (g) => {
-      const where = { genre: g.genre };
+      const where = { ...rangeFilter, genre: g.genre };
       const [downloaded, expanded, edited, avg] = await Promise.all([
         prisma.event.count({ where: { ...where, downloaded: true } }),
         prisma.event.count({ where: { ...where, horizontallyExpanded: true } }),
@@ -119,7 +123,7 @@ async function getDashboardData() {
 
   return {
     totalEvents,
-    monthEvents,
+    rangeEvents,
     downloadedTotal,
     genreRows,
     recentEvents,
@@ -131,17 +135,38 @@ async function getDashboardData() {
 // ページ
 // ============================================================
 
-export default async function DashboardPage() {
+const PERIOD_CHIPS: { value: string; label: string }[] = [
+  { value: '', label: '全期間' },
+  { value: 'today', label: '本日' },
+  { value: 'week', label: '今週' },
+  { value: 'month', label: '今月' },
+];
+
+const PERIOD_HINT: Record<string, string> = {
+  today: '本日(JST 0:00〜)',
+  week: '今週(月曜 0:00〜)',
+  month: '今月(1日 0:00〜)',
+};
+
+export default async function DashboardPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ period?: string }>;
+}) {
+  const sp = await searchParams;
+  const period = parsePeriod(sp.period);
+
   const {
     totalEvents,
-    monthEvents,
+    rangeEvents,
     downloadedTotal,
     genreRows,
     recentEvents,
     learningEnabled,
-  } = await getDashboardData();
+  } = await getDashboardData(period);
 
-  const overallDlRate = pct(downloadedTotal, totalEvents);
+  const rangeDlRate = pct(downloadedTotal, rangeEvents);
+  const periodLabel = period ? PERIOD_HINT[period] : '全期間';
 
   return (
     <div className="space-y-6">
@@ -169,22 +194,40 @@ export default async function DashboardPage() {
         </CardHeader>
       </Card>
 
+      {/* 期間フィルタ */}
+      <div className="flex items-center gap-2 flex-wrap">
+        <span className="text-xs text-muted-foreground mr-1">期間:</span>
+        {PERIOD_CHIPS.map((c) => (
+          <Link
+            key={c.value || 'all'}
+            href={c.value ? `/?period=${c.value}` : '/'}
+            className={`h-8 inline-flex items-center px-3 rounded-md text-xs border transition ${
+              (period ?? '') === c.value
+                ? 'bg-primary text-primary-foreground border-primary'
+                : 'border-input hover:bg-accent'
+            }`}
+          >
+            {c.label}
+          </Link>
+        ))}
+      </div>
+
       {/* 統計カード */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <StatCard
           label="総イベント件数"
           value={totalEvents.toLocaleString()}
-          hint="これまでに記録されたイベントの合計"
+          hint="これまでに記録されたイベントの合計(全期間)"
         />
         <StatCard
-          label="今月のイベント件数"
-          value={monthEvents.toLocaleString()}
-          hint="当月 1 日からの累計"
+          label={period ? `${PERIOD_CHIPS.find((c) => c.value === period)?.label}のイベント` : '期間内のイベント'}
+          value={rangeEvents.toLocaleString()}
+          hint={periodLabel}
         />
         <StatCard
           label="ダウンロード率"
-          value={overallDlRate}
-          hint={`${downloadedTotal.toLocaleString()} / ${totalEvents.toLocaleString()} イベント`}
+          value={rangeDlRate}
+          hint={`${downloadedTotal.toLocaleString()} / ${rangeEvents.toLocaleString()} イベント(${periodLabel})`}
         />
       </div>
 
@@ -206,7 +249,7 @@ export default async function DashboardPage() {
                   <TableHead className="text-right">DL率</TableHead>
                   <TableHead className="text-right">横展開率</TableHead>
                   <TableHead className="text-right">AI編集率</TableHead>
-                  <TableHead className="text-right">平均 hit_score</TableHead>
+                  <TableHead className="text-right">平均 刺さり度</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>

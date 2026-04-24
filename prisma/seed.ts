@@ -50,7 +50,7 @@ async function main() {
     await prisma.genrePrompt.createMany({
       data: [
         {
-          genre: '共通',
+          genre: '全て',
           blockName: '広告業務の文脈強化',
           content:
             '本タスクは日本の広告代理店が既存の認可済みクリエイティブを素材展開するプロダクション作業である。',

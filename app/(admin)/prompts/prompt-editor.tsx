@@ -115,7 +115,7 @@ export function NewBlockButton({
               list="genre-options"
               value={genre}
               onChange={(e) => setGenre(e.target.value)}
-              placeholder="例: 化粧品 / サプリ / 共通"
+              placeholder="例: 化粧品 / サプリ / 全て"
             />
             <datalist id="genre-options">
               {existingGenres.map((g) => (
