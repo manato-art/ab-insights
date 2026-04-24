@@ -32,6 +32,24 @@ export const createEventSchema = z.object({
   appealSelectedIndex: z.number().int().min(1).max(3).optional().nullable(),
   additionalNote: z.string().optional().nullable(),
 
+  /**
+   * AI 修正時の指示配列。ab-system の /api/edit-region の items[] と同形式。
+   * kind: 'background' | 'text' | 'text_color' | 'person' | 'product_swap' | 'remove' | ...
+   * text: ユーザーが入力した指示文。
+   * region: 省略可(画像全体のとき)。
+   * endpoint='edit-region' のときのみ送られる想定。
+   */
+  aiEditInstructions: z
+    .array(
+      z.object({
+        kind: z.string().optional().nullable(),
+        text: z.string().optional().nullable(),
+        region: z.record(z.string(), z.unknown()).optional().nullable(),
+      })
+    )
+    .optional()
+    .nullable(),
+
   // styleAxes は任意のオブジェクト(JSON 文字列化して保存)
   styleAxes: z.record(z.string(), z.unknown()).optional().nullable(),
 

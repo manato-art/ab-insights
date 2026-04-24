@@ -129,6 +129,10 @@ export async function POST(req: NextRequest) {
           appealOriginalText: body.appealOriginalText ?? null,
           appealSelectedIndex: body.appealSelectedIndex ?? null,
           additionalNote: body.additionalNote ?? null,
+          aiEditInstructionsJson:
+            body.aiEditInstructions && body.aiEditInstructions.length > 0
+              ? JSON.stringify(body.aiEditInstructions)
+              : null,
           styleAxesJson,
           urlAnalysisSummary: body.urlAnalysisSummary ?? null,
           promptFull: body.promptFull ?? null,

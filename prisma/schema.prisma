@@ -75,6 +75,9 @@ model Event {
   appealOriginalText String? // AI が最初に提案した訴求文(選ばれた①②③の原文)
   appealSelectedIndex Int?   // 選んだサブ項目の番号 (1|2|3)
   additionalNote     String?
+  // AI 修正(/api/edit-region)で記録する「AI に出した指示」。
+  // ab-system からは [{kind, text, region?}, ...] の JSON 文字列で届く。
+  aiEditInstructionsJson String?
   styleAxesJson      String? // JSON string
   urlAnalysisSummary String?
   promptFull         String? // Gemini に送った最終プロンプト(全文)
