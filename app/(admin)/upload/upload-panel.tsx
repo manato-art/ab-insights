@@ -179,13 +179,13 @@ export default function UploadPanel({ stats }: { stats: GenreStat[] }) {
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
-              {/* サムネイルギャラリー — DL / 完成ダウンロードが押されたもののみ */}
+              {/* 保存された画像 — DL / 完成ダウンロードが押されたもののみ(赤いモヤ強調) */}
               {(() => {
                 const savedThumbs = s.thumbs.filter((t) => t.downloaded);
                 if (savedThumbs.length === 0) return null;
                 return (
                   <div>
-                    <div className="font-mono text-muted-foreground text-[10px] uppercase tracking-wider mb-1.5">
+                    <div className="font-mono text-red-500 text-[10px] uppercase tracking-wider mb-1.5">
                       保存された画像 ({savedThumbs.length}{savedThumbs.length >= 24 ? '+' : ''} 枚 / hit 順)
                     </div>
                     <div className="grid grid-cols-4 sm:grid-cols-6 gap-1.5">
@@ -196,6 +196,20 @@ export default function UploadPanel({ stats }: { stats: GenreStat[] }) {
                   </div>
                 );
               })()}
+
+              {/* すべての生成画像 — ジャンル内で記録された全サムネイル */}
+              {s.thumbs.length > 0 && (
+                <div>
+                  <div className="font-mono text-muted-foreground text-[10px] uppercase tracking-wider mb-1.5">
+                    すべての生成画像 ({s.thumbs.length}{s.thumbs.length >= 24 ? '+' : ''} 枚 / hit 順)
+                  </div>
+                  <div className="grid grid-cols-4 sm:grid-cols-6 gap-1.5">
+                    {s.thumbs.map((t, i) => (
+                      <ThumbTile key={`all-${t.eventId}-${t.imageIndex}-${i}`} thumb={t} />
+                    ))}
+                  </div>
+                </div>
+              )}
               {s.uploadedSnippet && (
                 <div className="text-xs bg-muted p-2 rounded max-h-24 overflow-y-auto border">
                   <div className="font-mono text-muted-foreground text-[10px] uppercase tracking-wider mb-1">
