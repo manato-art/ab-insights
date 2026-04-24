@@ -14,6 +14,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { LearnedEditorButton } from './learned-editor';
 
 type ThumbItem = {
   eventId: number;
@@ -220,6 +221,9 @@ export default function UploadPanel({ stats }: { stats: GenreStat[] }) {
                 >
                   {s.uploaded ? '再アップロード' : 'アップロード'}
                 </Button>
+                {s.uploaded && (
+                  <LearnedEditorButton genre={s.genre} disabled={pending} />
+                )}
                 {s.uploaded && s.uploadedEnabled && (
                   <Button size="sm" variant="outline" onClick={() => handleDisable(s.genre)} disabled={pending}>
                     無効化

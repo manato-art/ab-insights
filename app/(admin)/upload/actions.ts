@@ -195,3 +195,49 @@ export async function deleteUploadedGenre(genre: string) {
   revalidatePath('/upload');
   revalidatePath('/prompts');
 }
+
+/**
+ * アップロード済みブロックの全文と付随メタデータを取得(編集 Dialog 用)。
+ * 未アップロードなら null を返す。
+ */
+export async function getUploadedGenreDetail(genre: string) {
+  await assertAdmin();
+  const row = await prisma.genrePrompt.findFirst({
+    where: { genre, blockName: LEARNED_BLOCK_NAME },
+    select: {
+      id: true,
+      content: true,
+      enabled: true,
+      note: true,
+      updatedAt: true,
+    },
+  });
+  return row;
+}
+
+/** アップロード済みブロックの本文をユーザー編集で上書き保存 */
+export async function updateUploadedGenreContent(
+  genre: string,
+  content: string,
+) {
+  await assertAdmin();
+  const trimmed = (content ?? '').trim();
+  if (!trimmed) throw new Error('学習内容を空にすることはできません');
+  const existing = await prisma.genrePrompt.findFirst({
+    where: { genre, blockName: LEARNED_BLOCK_NAME },
+    select: { id: true, note: true },
+  });
+  if (!existing) throw new Error('このジャンルはまだアップロードされていません');
+  const editedNote = [
+    existing.note || '',
+    `手動編集: ${new Date().toLocaleString('ja-JP')}`,
+  ]
+    .filter(Boolean)
+    .join(' / ');
+  await prisma.genrePrompt.update({
+    where: { id: existing.id },
+    data: { content: trimmed, note: editedNote },
+  });
+  revalidatePath('/upload');
+  revalidatePath('/prompts');
+}
