@@ -45,7 +45,13 @@ export function GeneratePromptPanel({
   const [renameOpen, setRenameOpen] = useState(false);
   const [resetOpen, setResetOpen] = useState(false);
 
+  const isAllTab = genre === '全て';
+
   function handleGenerate() {
+    if (isAllTab) {
+      handleGenerateAll();
+      return;
+    }
     startTransition(async () => {
       toast.info(`${genre} の学習データを分析中…(20-50 秒)`);
       const r = await generatePromptBlockPreview(genre);
@@ -58,6 +64,58 @@ export function GeneratePromptPanel({
           `プレビュー生成完了(${okBlocks}/${r.blocks.length} ブロックが AI 整形成功)`,
         );
       }
+    });
+  }
+
+  /**
+   * 「全て」タブの場合は、'全て' を除く全ジャンルを順次更新してそのままコミット。
+   * 逐次実行(並列だと OpenAI レート制限に引っかかりやすい)、各完了ごとに toast。
+   */
+  function handleGenerateAll() {
+    const targets = existingGenres.filter((g) => g !== '全て');
+    if (targets.length === 0) {
+      toast.warning('更新対象のジャンルがありません');
+      return;
+    }
+    const mins = Math.max(1, Math.ceil((targets.length * 30) / 60));
+    const ok = window.confirm(
+      `${targets.length} ジャンル(${targets.join(' / ')})のプロンプトを順次更新します。` +
+        `\n所要時間の目安: 約 ${mins} 分\n` +
+        '各ジャンルの 3 ブロックを自動生成 → そのまま保存(プレビュー省略)します。\n\n実行しますか?',
+    );
+    if (!ok) return;
+
+    startTransition(async () => {
+      let okCount = 0;
+      let ngCount = 0;
+      const errors: string[] = [];
+      for (let i = 0; i < targets.length; i++) {
+        const g = targets[i];
+        toast.info(`(${i + 1}/${targets.length}) ${g} を更新中…`);
+        const r = await generatePromptBlockPreview(g);
+        if (!r.ok) {
+          ngCount += 1;
+          errors.push(`${g}: ${r.error}`);
+          continue;
+        }
+        // 生成成功したブロックをそのまま commit(enhanced or ルールベースでも保存)
+        const c = await commitPromptBlocks(g, r.blocks);
+        if (c.ok) {
+          okCount += 1;
+          toast.success(`✓ ${g} — ${c.upsertedCount} ブロック保存`);
+        } else {
+          ngCount += 1;
+          errors.push(`${g} (commit): ${c.error}`);
+        }
+      }
+      if (ngCount === 0) {
+        toast.success(`全 ${okCount} ジャンルの更新が完了しました`);
+      } else {
+        toast.warning(
+          `${okCount} 件成功 / ${ngCount} 件失敗\n${errors.slice(0, 3).join('\n')}`,
+        );
+      }
+      router.refresh();
     });
   }
 
@@ -90,32 +148,40 @@ export function GeneratePromptPanel({
           <div className="flex-1 min-w-0">
             <div className="font-semibold text-sm">🔄 プロンプト自動更新</div>
             <p className="text-xs text-muted-foreground mt-0.5">
-              DL された画像と刺さりコピー、訴求サブ統計から 3 つのプロンプトブロックを生成します。
+              {isAllTab
+                ? '全ジャンルを順次更新します(プレビュー省略・自動保存)。所要時間はジャンル数に比例。'
+                : 'DL された画像と刺さりコピー、訴求サブ統計から 3 つのプロンプトブロックを生成します。'}
             </p>
           </div>
           <div className="flex items-center gap-2 flex-wrap">
-            <button
-              type="button"
-              onClick={() => setRenameOpen(true)}
-              disabled={pending || committing}
-              className="text-[11px] text-muted-foreground hover:text-foreground underline underline-offset-2 disabled:opacity-50"
-            >
-              名称変更
-            </button>
-            <button
-              type="button"
-              onClick={() => setResetOpen(true)}
-              disabled={pending || committing}
-              className="text-[11px] text-destructive hover:text-destructive/80 underline underline-offset-2 disabled:opacity-50"
-            >
-              学習リセット
-            </button>
+            {!isAllTab && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => setRenameOpen(true)}
+                  disabled={pending || committing}
+                  className="text-[11px] text-muted-foreground hover:text-foreground underline underline-offset-2 disabled:opacity-50"
+                >
+                  名称変更
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setResetOpen(true)}
+                  disabled={pending || committing}
+                  className="text-[11px] text-destructive hover:text-destructive/80 underline underline-offset-2 disabled:opacity-50"
+                >
+                  学習リセット
+                </button>
+              </>
+            )}
             <Button
               size="sm"
               onClick={handleGenerate}
               disabled={pending || committing}
             >
-              {pending && !result ? '生成中…' : 'プロンプトを更新'}
+              {pending && !result
+                ? (isAllTab ? '更新中…' : '生成中…')
+                : (isAllTab ? '全ジャンル一括更新' : 'プロンプトを更新')}
             </Button>
           </div>
         </CardContent>
