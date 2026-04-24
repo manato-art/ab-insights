@@ -25,6 +25,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import Link from 'next/link';
+import { DeleteGenreButton, DeleteRowButton } from './delete-buttons';
 
 export const dynamic = 'force-dynamic';
 
@@ -348,12 +349,15 @@ export default async function AppealsPage({
       ) : (
         genreStats.map((g) => (
           <section key={g.genre} className="space-y-4">
-            <div className="flex items-baseline gap-3 flex-wrap">
+            <div className="flex items-center gap-3 flex-wrap">
               <h2 className="text-lg font-semibold">{g.genre}</h2>
               <span className="text-xs text-muted-foreground">
                 訴求統計対象: {g.totalAppeal.toLocaleString()} 件 / AI 修正:{' '}
                 {g.totalAiEdit.toLocaleString()} 件
               </span>
+              <div className="ml-auto">
+                <DeleteGenreButton genre={g.genre} />
+              </div>
             </div>
 
             {/* 選択された訴求 */}
@@ -382,6 +386,7 @@ export default async function AppealsPage({
                         <TableHead className="text-right">
                           選ばれた位置
                         </TableHead>
+                        <TableHead className="w-[44px]"></TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -410,6 +415,13 @@ export default async function AppealsPage({
                           </TableCell>
                           <TableCell className="text-right text-xs font-mono">
                             {formatIndexHistogram(row.indexHistogram)}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <DeleteRowButton
+                              kind="selected"
+                              genre={g.genre}
+                              args={{ originalText: row.originalText }}
+                            />
                           </TableCell>
                         </TableRow>
                       ))}
@@ -441,6 +453,7 @@ export default async function AppealsPage({
                         <TableHead>書き換え後</TableHead>
                         <TableHead className="text-right">回数</TableHead>
                         <TableHead className="text-right">DL率</TableHead>
+                        <TableHead className="w-[44px]"></TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -459,6 +472,16 @@ export default async function AppealsPage({
                           </TableCell>
                           <TableCell className="text-right tabular-nums">
                             {pct(row.downloaded, row.count)}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <DeleteRowButton
+                              kind="rewritten"
+                              genre={g.genre}
+                              args={{
+                                originalText: row.originalText,
+                                rewrittenText: row.rewrittenText,
+                              }}
+                            />
                           </TableCell>
                         </TableRow>
                       ))}
@@ -514,6 +537,7 @@ export default async function AppealsPage({
                             <TableHead className="w-[120px]">種別</TableHead>
                             <TableHead>指示文</TableHead>
                             <TableHead className="text-right">回数</TableHead>
+                            <TableHead className="w-[44px]"></TableHead>
                           </TableRow>
                         </TableHeader>
                         <TableBody>
@@ -529,6 +553,16 @@ export default async function AppealsPage({
                               </TableCell>
                               <TableCell className="text-right tabular-nums">
                                 {row.count.toLocaleString()}
+                              </TableCell>
+                              <TableCell className="text-right">
+                                <DeleteRowButton
+                                  kind="aiedit"
+                                  genre={g.genre}
+                                  args={{
+                                    instructionKind: row.kind,
+                                    text: row.text,
+                                  }}
+                                />
                               </TableCell>
                             </TableRow>
                           ))}
