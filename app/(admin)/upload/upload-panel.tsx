@@ -198,7 +198,7 @@ export default function UploadPanel({ stats }: { stats: GenreStat[] }) {
                 )}
               </div>
               <CardDescription>
-                Event {s.eventCount} 件 / DL {s.downloaded} / 横展開 {s.expanded}
+                生成画像 {s.eventCount} 件 / DL {s.downloaded} / 横展開 {s.expanded}
                 {s.avgHit != null && (
                   <span className="ml-2">平均 hit {(s.avgHit * 100).toFixed(1)}%</span>
                 )}
@@ -307,7 +307,7 @@ export default function UploadPanel({ stats }: { stats: GenreStat[] }) {
                     className="text-destructive hover:text-destructive hover:bg-destructive/10"
                     onClick={() => setResetTarget(s)}
                     disabled={pending}
-                    title="このジャンルの Event を全削除してゼロから再学習"
+                    title="このジャンルの生成画像を全削除してゼロから再学習"
                   >
                     学習リセット
                   </Button>
@@ -315,7 +315,7 @@ export default function UploadPanel({ stats }: { stats: GenreStat[] }) {
               </div>
               {s.eventCount === 0 && (
                 <p className="text-xs text-muted-foreground">
-                  このジャンルにはまだ Event がありません
+                  このジャンルにはまだ生成画像がありません
                 </p>
               )}
             </CardContent>
@@ -627,7 +627,7 @@ function ResetDialogInner({
         <div className="rounded-md border border-destructive/30 bg-destructive/5 p-3 space-y-1 text-sm">
           <div className="font-semibold">{target.genre}</div>
           <div className="text-xs text-muted-foreground">
-            Event <span className="font-mono">{target.eventCount}</span> 件
+            生成画像 <span className="font-mono">{target.eventCount}</span> 件
             {' / '}DL <span className="font-mono">{target.downloaded}</span>
             {' / '}横展開 <span className="font-mono">{target.expanded}</span>
             {target.uploaded && ' / 学習ブロックあり'}

@@ -179,7 +179,7 @@ export default async function CrossGenrePage() {
         <CardContent className="px-0 overflow-x-auto">
           {rows.length === 0 || subLabels.length === 0 ? (
             <div className="px-4 py-8 text-center text-sm text-muted-foreground">
-              集計できるデータがまだありません。Event に appealType と appealSelectedIndex が揃っている必要があります。
+              集計できるデータがまだありません。生成画像に appealType と appealSelectedIndex が揃っている必要があります。
             </div>
           ) : (
             <Table>

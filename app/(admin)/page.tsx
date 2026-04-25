@@ -174,7 +174,7 @@ export default async function DashboardPage({
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">ダッシュボード</h1>
         <p className="text-sm text-muted-foreground mt-1">
-          学習データの収集状況とイベントの集計
+          学習データの収集状況と生成画像の集計
         </p>
       </div>
 
@@ -185,8 +185,8 @@ export default async function DashboardPage({
             <div className="space-y-1">
               <CardTitle>学習データ収集</CardTitle>
               <CardDescription>
-                ab-system からの webhook を受信してイベントを保存します。
-                無効化するとイベントは記録されません。
+                ab-system からの webhook を受信して生成画像を保存します。
+                無効化すると生成画像は記録されません。
               </CardDescription>
             </div>
             <LearningToggle initialEnabled={learningEnabled} />
@@ -215,19 +215,19 @@ export default async function DashboardPage({
       {/* 統計カード */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <StatCard
-          label="総イベント件数"
+          label="総生成画像件数"
           value={totalEvents.toLocaleString()}
-          hint="これまでに記録されたイベントの合計(全期間)"
+          hint="これまでに記録された生成画像の合計(全期間)"
         />
         <StatCard
-          label={period ? `${PERIOD_CHIPS.find((c) => c.value === period)?.label}のイベント` : '期間内のイベント'}
+          label={period ? `${PERIOD_CHIPS.find((c) => c.value === period)?.label}の生成画像` : '期間内の生成画像'}
           value={rangeEvents.toLocaleString()}
           hint={periodLabel}
         />
         <StatCard
           label="ダウンロード率"
           value={rangeDlRate}
-          hint={`${downloadedTotal.toLocaleString()} / ${rangeEvents.toLocaleString()} イベント(${periodLabel})`}
+          hint={`${downloadedTotal.toLocaleString()} / ${rangeEvents.toLocaleString()} 生成画像(${periodLabel})`}
         />
       </div>
 
@@ -285,15 +285,15 @@ export default async function DashboardPage({
         </CardContent>
       </Card>
 
-      {/* 直近イベント */}
+      {/* 直近生成画像 */}
       <Card>
         <CardHeader>
-          <CardTitle>直近イベント</CardTitle>
+          <CardTitle>直近の生成画像</CardTitle>
           <CardDescription>最新 5 件</CardDescription>
         </CardHeader>
         <CardContent className="px-0">
           {recentEvents.length === 0 ? (
-            <EmptyState message="イベントがまだありません" />
+            <EmptyState message="生成画像がまだありません" />
           ) : (
             <Table>
               <TableHeader>

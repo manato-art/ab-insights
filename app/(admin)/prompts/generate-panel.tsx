@@ -249,7 +249,7 @@ export function GeneratePromptPanel({
             <>
               <div className="rounded-md border bg-muted/40 p-3 text-xs space-y-0.5">
                 <div>
-                  Event <span className="font-mono">{result.signals.eventCount}</span> 件 /
+                  生成画像 <span className="font-mono">{result.signals.eventCount}</span> 件 /
                   DL <span className="font-mono">{result.signals.downloadedCount}</span> /
                   横展開 <span className="font-mono">{result.signals.expandedCount}</span> /
                   解析画像 <span className="font-mono">{result.signals.savedImageCount}</span> 枚

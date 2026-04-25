@@ -23,7 +23,7 @@ export function DeleteGenreButton({ genre }: { genre: string }) {
       size="sm"
       disabled={pending}
       onClick={() => {
-        if (!confirm(`ジャンル「${genre}」の全イベントを削除します。よろしいですか？`)) return;
+        if (!confirm(`ジャンル「${genre}」の全生成画像を削除します。よろしいですか？`)) return;
         start(async () => {
           try {
             const n = await deleteGenreData(genre);

@@ -354,7 +354,7 @@ export default async function AppealsPage({
         <CardHeader>
           <CardTitle>ジャンル</CardTitle>
           <CardDescription>
-            フィルタで絞り込み。訴求原文 or AI 修正指示のどちらかを持つイベントを対象
+            フィルタで絞り込み。訴求原文 or AI 修正指示のどちらかを持つ生成画像を対象
           </CardDescription>
         </CardHeader>
         <CardContent>

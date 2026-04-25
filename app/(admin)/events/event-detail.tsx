@@ -132,7 +132,7 @@ function EventDetailDialog({
       <DialogContent className="sm:max-w-3xl max-h-[85vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>
-            イベント #{event.id}
+            生成画像 #{event.id}
             <Badge variant="secondary" className="ml-2">
               {endpointLabel(event.endpoint)}
             </Badge>
