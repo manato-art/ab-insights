@@ -1,11 +1,11 @@
 // 訴求ポイント統計
 // - ジャンル別に「選択された訴求ポイント」の出現頻度と DL 率
 // - ジャンル別に「書き換えられた訴求ポイント」の before → after ペア一覧
-// - ジャンル別に「AI 修正指示」(edit-region イベント) の kind 別/文言別頻度
+//
+// AI 修正指示の集計は専用ページ /ai-edits に分離した。
 //
 // データ源:
 //   Event.appealOriginalText (AI 原文) vs Event.appealText (最終確定版・keywords 付き)
-//   Event.aiEditInstructionsJson (AI 修正エンドポイント経由の指示配列)
 // 古いイベント(いずれも null)は統計対象外。
 
 import { prisma } from '@/lib/db';
@@ -26,6 +26,11 @@ import {
 } from '@/components/ui/table';
 import Link from 'next/link';
 import { DeleteGenreButton, DeleteRowButton } from './delete-buttons';
+import {
+  type AiEditKindRow,
+  type AiEditInstructionRow,
+  parseAiEditJson,
+} from './_helpers';
 
 export const dynamic = 'force-dynamic';
 
@@ -84,17 +89,6 @@ type RewrittenRow = {
   downloaded: number;
 };
 
-type AiEditKindRow = {
-  kind: string;
-  count: number;
-};
-
-type AiEditInstructionRow = {
-  kind: string;
-  text: string;
-  count: number;
-};
-
 type GenreStats = {
   genre: string;
   totalAppeal: number;
@@ -114,38 +108,6 @@ function pct(numerator: number, denominator: number): string {
 function extractPlainAppealText(appealText: string | null): string {
   if (!appealText) return '';
   return appealText.replace(/\n*【使用キーワード：[^】]*】\s*$/u, '').trim();
-}
-
-/** AI 修正の kind を日本語に */
-function kindLabel(kind: string): string {
-  const m: Record<string, string> = {
-    background: '背景',
-    text: 'テキスト',
-    text_color: 'テキスト色',
-    text_content: 'テキスト文言',
-    text_size: 'テキストサイズ',
-    person: '人物',
-    color: '色',
-    product_swap: '商品差し替え',
-    remove: '削除',
-  };
-  return m[kind] ?? kind;
-}
-
-type AiEditItem = {
-  kind?: string | null;
-  text?: string | null;
-};
-
-function parseAiEditJson(json: string | null): AiEditItem[] {
-  if (!json) return [];
-  try {
-    const parsed = JSON.parse(json);
-    if (!Array.isArray(parsed)) return [];
-    return parsed;
-  } catch {
-    return [];
-  }
 }
 
 // ============================================================
@@ -345,7 +307,7 @@ export default async function AppealsPage({
           訴求ポイント統計
         </h1>
         <p className="text-sm text-muted-foreground mt-1">
-          「どの訴求が選ばれたか」「どう書き換えられたか」「AI 修正でどんな指示が出たか」をジャンル別に集計
+          「どの訴求が選ばれたか」「どう書き換えられたか」をジャンル別に集計(AI 修正指示は <Link href="/ai-edits" className="underline hover:text-foreground">AI 修正指示</Link> へ)
         </p>
       </div>
 
@@ -354,7 +316,7 @@ export default async function AppealsPage({
         <CardHeader>
           <CardTitle>ジャンル</CardTitle>
           <CardDescription>
-            フィルタで絞り込み。訴求原文 or AI 修正指示のどちらかを持つ生成画像を対象
+            フィルタで絞り込み。訴求原文を持つ生成画像が対象
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -370,8 +332,7 @@ export default async function AppealsPage({
             ))}
             {genreOptions.length === 0 && (
               <span className="text-sm text-muted-foreground">
-                データがまだありません。ab-system
-                から画像生成・AI 修正を行うとデータが溜まります。
+                データがまだありません。ab-system から画像生成を行うとデータが溜まります。
               </span>
             )}
           </div>
@@ -391,8 +352,7 @@ export default async function AppealsPage({
             <div className="flex items-center gap-3 flex-wrap">
               <h2 className="text-lg font-semibold">{g.genre}</h2>
               <span className="text-xs text-muted-foreground">
-                訴求統計対象: {g.totalAppeal.toLocaleString()} 件 / AI 修正:{' '}
-                {g.totalAiEdit.toLocaleString()} 件
+                訴求統計対象: {g.totalAppeal.toLocaleString()} 件
               </span>
               <div className="ml-auto">
                 <DeleteGenreButton genre={g.genre} />
@@ -530,88 +490,6 @@ export default async function AppealsPage({
               </CardContent>
             </Card>
 
-            {/* AI 修正指示 */}
-            <Card>
-              <CardHeader>
-                <CardTitle>AI 修正指示</CardTitle>
-                <CardDescription>
-                  /edit-region 経由でユーザーが AI に出した指示
-                  (kind 別頻度 + 具体的な指示文)
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="px-0">
-                {g.aiEditInstructions.length === 0 &&
-                g.aiEditKinds.length === 0 ? (
-                  <div className="px-4 py-8 text-center text-sm text-muted-foreground">
-                    AI 修正データがまだありません
-                  </div>
-                ) : (
-                  <div className="space-y-4">
-                    {g.aiEditKinds.length > 0 && (
-                      <div className="px-4">
-                        <div className="text-xs text-muted-foreground mb-2">
-                          種別別頻度
-                        </div>
-                        <div className="flex flex-wrap gap-2">
-                          {g.aiEditKinds.map((k) => (
-                            <span
-                              key={k.kind}
-                              className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-accent text-xs"
-                            >
-                              <span className="font-medium">
-                                {kindLabel(k.kind)}
-                              </span>
-                              <span className="tabular-nums text-muted-foreground">
-                                × {k.count}
-                              </span>
-                            </span>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                    {g.aiEditInstructions.length > 0 && (
-                      <Table>
-                        <TableHeader>
-                          <TableRow>
-                            <TableHead className="w-[120px]">種別</TableHead>
-                            <TableHead>指示文</TableHead>
-                            <TableHead className="text-right">回数</TableHead>
-                            <TableHead className="w-[44px]"></TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {g.aiEditInstructions.slice(0, 30).map((row) => (
-                            <TableRow key={`${row.kind}__${row.text}`}>
-                              <TableCell className="text-xs">
-                                <span className="inline-block px-2 py-0.5 rounded bg-muted">
-                                  {kindLabel(row.kind)}
-                                </span>
-                              </TableCell>
-                              <TableCell className="text-sm whitespace-pre-wrap break-words max-w-[560px]">
-                                {row.text}
-                              </TableCell>
-                              <TableCell className="text-right tabular-nums">
-                                {row.count.toLocaleString()}
-                              </TableCell>
-                              <TableCell className="text-right">
-                                <DeleteRowButton
-                                  kind="aiedit"
-                                  genre={g.genre}
-                                  args={{
-                                    instructionKind: row.kind,
-                                    text: row.text,
-                                  }}
-                                />
-                              </TableCell>
-                            </TableRow>
-                          ))}
-                        </TableBody>
-                      </Table>
-                    )}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
           </section>
         ))
       )}
