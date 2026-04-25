@@ -1,4 +1,4 @@
-// イベント一覧ページ (Server Component)
+// 工程履歴一覧ページ (Server Component)
 // - URL query param でフィルタ / ページネーション
 // - 行クリックで詳細 Dialog(client component で制御)
 import Link from 'next/link';
@@ -20,7 +20,7 @@ import {
   type EventDetailPayload,
 } from './event-detail';
 
-export const metadata = { title: 'イベント一覧 — ab-insights' };
+export const metadata = { title: '工程履歴一覧 — ab-insights' };
 
 const DEFAULT_PER_PAGE = 50;
 const MAX_PER_PAGE = 200;
@@ -161,7 +161,7 @@ export default async function EventsPage({
   return (
     <div className="space-y-5">
       <div>
-        <h1 className="text-2xl font-semibold">イベント一覧</h1>
+        <h1 className="text-2xl font-semibold">工程履歴一覧</h1>
         <p className="text-sm text-muted-foreground mt-1">
           ab-system からの画像生成記録を閲覧します。
         </p>
