@@ -301,7 +301,13 @@ function BlockCard({
               )}
             </CardTitle>
             {block.note && (
-              <CardDescription className="mt-1">{block.note}</CardDescription>
+              <div className="mt-2 flex items-start gap-1.5 rounded-md border border-amber-200/60 bg-amber-50/50 px-2.5 py-1.5 text-xs text-amber-900 dark:border-amber-900/40 dark:bg-amber-950/30 dark:text-amber-100">
+                <span aria-hidden className="select-none">💡</span>
+                <div className="min-w-0">
+                  <span className="font-semibold">運用メモ:</span>{' '}
+                  <span className="text-amber-900/90 dark:text-amber-100/90">{block.note}</span>
+                </div>
+              </div>
             )}
           </div>
           <div className="flex items-center gap-2 shrink-0">
