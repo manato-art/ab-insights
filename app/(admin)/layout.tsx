@@ -21,7 +21,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
           <NavLink href="/cross-genre" label="ジャンル転移分析" />
           <NavLink href="/prompts" label="プロンプト管理" />
           <NavLink href="/upload" label="学習アップロード" />
-          <NavLink href="/events" label="生成画像一覧" />
+          <NavLink href="/events" label="イベント一覧" />
           <NavLink href="/settings" label="設定" />
         </nav>
         <Separator />
