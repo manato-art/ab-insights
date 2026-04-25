@@ -143,7 +143,7 @@ export function GeneratePromptPanel({
 
   return (
     <>
-      <Card className="border-primary/30 bg-primary/5 py-0">
+      <Card className="border-primary/30 bg-primary/5 py-0 w-fit max-w-full">
         <CardContent className="px-3 py-2 flex items-center gap-3 flex-wrap">
           <div className="flex items-baseline gap-2 flex-wrap min-w-0">
             <div className="font-semibold text-sm whitespace-nowrap">🔄 プロンプト自動更新</div>
