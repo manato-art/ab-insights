@@ -145,9 +145,9 @@ export function GeneratePromptPanel({
     <>
       <Card className="border-primary/30 bg-primary/5 py-0">
         <CardContent className="px-3 py-2 flex items-center gap-3 flex-wrap">
-          <div className="flex-1 min-w-0 flex items-baseline gap-2 flex-wrap">
+          <div className="flex items-baseline gap-2 flex-wrap min-w-0">
             <div className="font-semibold text-sm whitespace-nowrap">🔄 プロンプト自動更新</div>
-            <p className="text-xs text-muted-foreground truncate">
+            <p className="text-xs text-muted-foreground">
               {isAllTab
                 ? '全ジャンルを順次更新(プレビュー省略・自動保存)'
                 : 'DL画像 + 刺さりコピー + 訴求サブ統計から 3 ブロック生成'}
