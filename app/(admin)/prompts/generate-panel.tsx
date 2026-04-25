@@ -143,14 +143,14 @@ export function GeneratePromptPanel({
 
   return (
     <>
-      <Card className="border-primary/30 bg-primary/5">
-        <CardContent className="py-4 flex items-center gap-3 flex-wrap">
-          <div className="flex-1 min-w-0">
-            <div className="font-semibold text-sm">🔄 プロンプト自動更新</div>
-            <p className="text-xs text-muted-foreground mt-0.5">
+      <Card className="border-primary/30 bg-primary/5 py-0">
+        <CardContent className="px-3 py-2 flex items-center gap-3 flex-wrap">
+          <div className="flex-1 min-w-0 flex items-baseline gap-2 flex-wrap">
+            <div className="font-semibold text-sm whitespace-nowrap">🔄 プロンプト自動更新</div>
+            <p className="text-xs text-muted-foreground truncate">
               {isAllTab
-                ? '全ジャンルを順次更新します(プレビュー省略・自動保存)。所要時間はジャンル数に比例。'
-                : 'DL された画像と刺さりコピー、訴求サブ統計から 3 つのプロンプトブロックを生成します。'}
+                ? '全ジャンルを順次更新(プレビュー省略・自動保存)'
+                : 'DL画像 + 刺さりコピー + 訴求サブ統計から 3 ブロック生成'}
             </p>
           </div>
           <div className="flex items-center gap-2 flex-wrap">
