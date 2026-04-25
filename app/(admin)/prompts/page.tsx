@@ -23,6 +23,7 @@ import {
   type PromptBlock,
 } from './prompt-editor';
 import { GeneratePromptPanel } from './generate-panel';
+import { InlineContentEditor } from './inline-content-editor';
 
 export const metadata = { title: 'プロンプト管理 — ab-insights' };
 
@@ -310,9 +311,7 @@ function BlockCard({
         </div>
       </CardHeader>
       <CardContent className="space-y-3">
-        <pre className="whitespace-pre-wrap font-mono text-xs bg-muted/50 rounded-md p-3 max-h-60 overflow-y-auto">
-          {block.content}
-        </pre>
+        <InlineContentEditor blockId={block.id} initialContent={block.content} />
         <div className="flex items-center justify-between gap-2">
           <div className="text-[11px] text-muted-foreground">
             更新: {formatDateTime(block.updatedAt)}
