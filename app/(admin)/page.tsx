@@ -23,7 +23,6 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -36,11 +35,7 @@ import {
   type Period,
   type DateRange,
 } from '@/lib/period';
-import {
-  formatJstShortDateTime,
-  jstDateInputValue,
-  JST_TIMEZONE,
-} from '@/lib/format';
+import { jstDateInputValue, JST_TIMEZONE } from '@/lib/format';
 
 export const dynamic = 'force-dynamic';
 
@@ -116,7 +111,6 @@ async function getDashboardData(rangeFilter: RangeFilter) {
     rangeImagesAgg,
     downloadedTotal,
     genreGroups,
-    recentEvents,
     learningEnabled,
   ] = await Promise.all([
     prisma.event.count(),
@@ -130,19 +124,6 @@ async function getDashboardData(rangeFilter: RangeFilter) {
       _count: { _all: true },
       _sum: { imageCount: true },
       orderBy: { _count: { id: 'desc' } },
-    }),
-    prisma.event.findMany({
-      where,
-      orderBy: { createdAt: 'desc' },
-      take: 5,
-      select: {
-        id: true,
-        endpoint: true,
-        genre: true,
-        createdAt: true,
-        downloaded: true,
-        imageCount: true,
-      },
     }),
     getLearningEnabled(),
   ]);
@@ -182,7 +163,6 @@ async function getDashboardData(rangeFilter: RangeFilter) {
     rangeImages,
     downloadedTotal,
     genreRows,
-    recentEvents,
     learningEnabled,
   };
 }
@@ -274,7 +254,6 @@ export default async function DashboardPage({
       rangeImages,
       downloadedTotal,
       genreRows,
-      recentEvents,
       learningEnabled,
     },
     dailyRows,
@@ -542,57 +521,6 @@ export default async function DashboardPage({
         </CardContent>
       </Card>
 
-      {/* 直近生成画像 */}
-      <Card>
-        <CardHeader>
-          <CardTitle>直近の生成画像</CardTitle>
-          <CardDescription>最新 5 件 (JST)</CardDescription>
-        </CardHeader>
-        <CardContent className="px-0">
-          {recentEvents.length === 0 ? (
-            <EmptyState message="生成画像がまだありません" />
-          ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>ID</TableHead>
-                  <TableHead>エンドポイント</TableHead>
-                  <TableHead>ジャンル</TableHead>
-                  <TableHead>日時</TableHead>
-                  <TableHead className="text-right">DL</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {recentEvents.map((ev) => (
-                  <TableRow key={ev.id}>
-                    <TableCell className="font-mono text-xs text-muted-foreground">
-                      #{ev.id}
-                    </TableCell>
-                    <TableCell className="font-mono text-xs">
-                      {ev.endpoint}
-                    </TableCell>
-                    <TableCell>
-                      {ev.genre ?? (
-                        <span className="text-muted-foreground">未分類</span>
-                      )}
-                    </TableCell>
-                    <TableCell className="text-xs text-muted-foreground">
-                      {formatJstShortDateTime(ev.createdAt)}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      {ev.downloaded ? (
-                        <Badge variant="default">DL済</Badge>
-                      ) : (
-                        <Badge variant="outline">未DL</Badge>
-                      )}
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          )}
-        </CardContent>
-      </Card>
     </div>
   );
 }
