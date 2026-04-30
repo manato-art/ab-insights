@@ -52,7 +52,8 @@ export const metadata = { title: 'ダッシュボード — ab-insights' };
 
 type GenreRow = {
   genre: string;
-  total: number;
+  total: number; // 工程数 (Event 件数)
+  images: number; // 画像枚数 (imageCount 合計)
   downloaded: number;
   expanded: number;
   edited: number;
@@ -61,7 +62,8 @@ type GenreRow = {
 
 type DailyRow = {
   day: string; // YYYY-MM-DD (JST)
-  total: number;
+  total: number; // 工程数 (Event 件数)
+  images: number; // 画像枚数 (imageCount 合計)
   downloaded: number;
   expanded: number;
   edited: number;
@@ -109,19 +111,24 @@ async function getDashboardData(rangeFilter: RangeFilter) {
 
   const [
     totalEvents,
+    totalImagesAgg,
     rangeEvents,
+    rangeImagesAgg,
     downloadedTotal,
     genreGroups,
     recentEvents,
     learningEnabled,
   ] = await Promise.all([
     prisma.event.count(),
+    prisma.event.aggregate({ _sum: { imageCount: true } }),
     prisma.event.count({ where }),
+    prisma.event.aggregate({ where, _sum: { imageCount: true } }),
     prisma.event.count({ where: { ...where, downloaded: true } }),
     prisma.event.groupBy({
       by: ['genre'],
       where,
       _count: { _all: true },
+      _sum: { imageCount: true },
       orderBy: { _count: { id: 'desc' } },
     }),
     prisma.event.findMany({
@@ -134,10 +141,14 @@ async function getDashboardData(rangeFilter: RangeFilter) {
         genre: true,
         createdAt: true,
         downloaded: true,
+        imageCount: true,
       },
     }),
     getLearningEnabled(),
   ]);
+
+  const totalImages = totalImagesAgg._sum.imageCount ?? 0;
+  const rangeImages = rangeImagesAgg._sum.imageCount ?? 0;
 
   // ジャンル別の詳細(downloaded/expanded/edited/avgHit)は個別クエリで
   const genreRows: GenreRow[] = await Promise.all(
@@ -155,6 +166,7 @@ async function getDashboardData(rangeFilter: RangeFilter) {
       return {
         genre: g.genre ?? '',
         total: g._count._all,
+        images: g._sum.imageCount ?? 0,
         downloaded,
         expanded,
         edited,
@@ -165,7 +177,9 @@ async function getDashboardData(rangeFilter: RangeFilter) {
 
   return {
     totalEvents,
+    totalImages,
     rangeEvents,
+    rangeImages,
     downloadedTotal,
     genreRows,
     recentEvents,
@@ -193,6 +207,7 @@ async function getDailyBreakdown(
     where,
     select: {
       createdAt: true,
+      imageCount: true,
       downloaded: true,
       horizontallyExpanded: true,
       aiEdited: true,
@@ -207,11 +222,13 @@ async function getDailyBreakdown(
       ({
         day,
         total: 0,
+        images: 0,
         downloaded: 0,
         expanded: 0,
         edited: 0,
       } satisfies DailyRow);
     cur.total++;
+    cur.images += e.imageCount;
     if (e.downloaded) cur.downloaded++;
     if (e.horizontallyExpanded) cur.expanded++;
     if (e.aiEdited) cur.edited++;
@@ -252,7 +269,9 @@ export default async function DashboardPage({
   const [
     {
       totalEvents,
+      totalImages,
       rangeEvents,
+      rangeImages,
       downloadedTotal,
       genreRows,
       recentEvents,
@@ -279,10 +298,10 @@ export default async function DashboardPage({
   }
 
   const dailyHint = usingExplicitRange
-    ? '指定範囲内の日別件数 (JST)'
+    ? '指定範囲の日別 工程数 / 画像枚数 / 行動シグナル (JST)'
     : period
-      ? `${PERIOD_CHIPS.find((c) => c.value === period)?.label ?? ''}の日別件数 (JST)`
-      : '直近 30 日の日別件数 (JST)';
+      ? `${PERIOD_CHIPS.find((c) => c.value === period)?.label ?? ''}の日別 工程数 / 画像枚数 / 行動シグナル (JST)`
+      : '直近 30 日の日別 工程数 / 画像枚数 / 行動シグナル (JST)';
 
   return (
     <div className="space-y-6">
@@ -386,26 +405,28 @@ export default async function DashboardPage({
 
       {/* 統計カード */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <StatCard
-          label="総生成画像件数"
-          value={totalEvents.toLocaleString()}
-          hint="これまでに記録された生成画像の合計(全期間)"
+        <DualStatCard
+          label="累計 生成枚数 (全期間)"
+          primary={{ value: totalImages.toLocaleString(), unit: '枚' }}
+          secondary={`工程数: ${totalEvents.toLocaleString()} (= 工程一覧の合計)`}
+          hint="1 工程で N 枚生成されると枚数は +N、工程数は +1"
         />
-        <StatCard
+        <DualStatCard
           label={
             usingExplicitRange
-              ? '範囲内の生成画像'
+              ? '範囲内 生成枚数'
               : period
-                ? `${PERIOD_CHIPS.find((c) => c.value === period)?.label}の生成画像`
-                : '期間内の生成画像'
+                ? `${PERIOD_CHIPS.find((c) => c.value === period)?.label}の生成枚数`
+                : '期間内 生成枚数'
           }
-          value={rangeEvents.toLocaleString()}
+          primary={{ value: rangeImages.toLocaleString(), unit: '枚' }}
+          secondary={`工程数: ${rangeEvents.toLocaleString()}`}
           hint={periodLabel}
         />
         <StatCard
-          label="ダウンロード率"
+          label="ダウンロード率 (工程ベース)"
           value={rangeDlRate}
-          hint={`${downloadedTotal.toLocaleString()} / ${rangeEvents.toLocaleString()} 生成画像(${periodLabel})`}
+          hint={`${downloadedTotal.toLocaleString()} / ${rangeEvents.toLocaleString()} 工程が DL 済 (${periodLabel})`}
         />
       </div>
 
@@ -423,7 +444,8 @@ export default async function DashboardPage({
               <TableHeader>
                 <TableRow>
                   <TableHead>日付 (JST)</TableHead>
-                  <TableHead className="text-right">生成数</TableHead>
+                  <TableHead className="text-right">工程数</TableHead>
+                  <TableHead className="text-right">画像枚数</TableHead>
                   <TableHead className="text-right">DL</TableHead>
                   <TableHead className="text-right">横展開</TableHead>
                   <TableHead className="text-right">AI編集</TableHead>
@@ -438,6 +460,9 @@ export default async function DashboardPage({
                     </TableCell>
                     <TableCell className="text-right tabular-nums">
                       {row.total.toLocaleString()}
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {row.images.toLocaleString()}
                     </TableCell>
                     <TableCell className="text-right tabular-nums">
                       {row.downloaded.toLocaleString()}
@@ -463,7 +488,7 @@ export default async function DashboardPage({
       <Card>
         <CardHeader>
           <CardTitle>ジャンル別サマリー</CardTitle>
-          <CardDescription>ジャンル毎の件数・各種レート</CardDescription>
+          <CardDescription>ジャンル毎の工程数・画像枚数・各種レート</CardDescription>
         </CardHeader>
         <CardContent className="px-0">
           {genreRows.length === 0 ? (
@@ -473,7 +498,8 @@ export default async function DashboardPage({
               <TableHeader>
                 <TableRow>
                   <TableHead>ジャンル</TableHead>
-                  <TableHead className="text-right">件数</TableHead>
+                  <TableHead className="text-right">工程数</TableHead>
+                  <TableHead className="text-right">画像枚数</TableHead>
                   <TableHead className="text-right">DL率</TableHead>
                   <TableHead className="text-right">横展開率</TableHead>
                   <TableHead className="text-right">AI編集率</TableHead>
@@ -490,6 +516,9 @@ export default async function DashboardPage({
                     </TableCell>
                     <TableCell className="text-right tabular-nums">
                       {row.total.toLocaleString()}
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {row.images.toLocaleString()}
                     </TableCell>
                     <TableCell className="text-right tabular-nums">
                       {pct(row.downloaded, row.total)}
@@ -571,6 +600,42 @@ export default async function DashboardPage({
 // ============================================================
 // サブコンポーネント
 // ============================================================
+
+function DualStatCard({
+  label,
+  primary,
+  secondary,
+  hint,
+}: {
+  label: string;
+  primary: { value: string; unit: string };
+  secondary: string;
+  hint?: string;
+}) {
+  return (
+    <Card>
+      <CardHeader>
+        <CardDescription className="text-xs uppercase tracking-wider">
+          {label}
+        </CardDescription>
+        <CardTitle className="text-3xl font-semibold tabular-nums pt-1">
+          {primary.value}
+          <span className="text-base font-normal text-muted-foreground ml-1.5">
+            {primary.unit}
+          </span>
+        </CardTitle>
+        <p className="text-xs text-muted-foreground tabular-nums pt-1">
+          {secondary}
+        </p>
+      </CardHeader>
+      {hint && (
+        <CardContent>
+          <p className="text-xs text-muted-foreground">{hint}</p>
+        </CardContent>
+      )}
+    </Card>
+  );
+}
 
 function StatCard({
   label,
