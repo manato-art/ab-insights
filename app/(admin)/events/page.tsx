@@ -3,7 +3,12 @@
 // - 行クリックで詳細 Dialog(client component で制御)
 import Link from 'next/link';
 import { prisma } from '@/lib/db';
-import { parsePeriod, periodStartDate } from '@/lib/period';
+import {
+  parsePeriod,
+  parseDateRange,
+  resolveRangeFilter,
+} from '@/lib/period';
+import { formatJstShortDateTime } from '@/lib/format';
 import {
   Table,
   TableBody,
@@ -32,6 +37,8 @@ type SearchParams = {
   endpoint?: string;
   user?: string;
   period?: string; // 'today' | 'week' | 'month'
+  from?: string; // YYYY-MM-DD (JST)
+  to?: string; // YYYY-MM-DD (JST)
   downloaded?: string;
   horizontallyExpanded?: string;
 };
@@ -51,20 +58,21 @@ export default async function EventsPage({
 
   // --- where 構築 ---
   const period = parsePeriod(sp.period);
-  const periodFrom = periodStartDate(period);
+  const range = parseDateRange(sp.from, sp.to);
+  const rangeFilter = resolveRangeFilter(period, range);
 
   const where: {
     genre?: string;
     endpoint?: string;
     abSystemUserName?: { contains: string; mode: 'insensitive' };
-    createdAt?: { gte: Date };
+    createdAt?: { gte?: Date; lt?: Date };
     downloaded?: boolean;
     horizontallyExpanded?: boolean;
   } = {};
   if (sp.genre) where.genre = sp.genre;
   if (sp.endpoint) where.endpoint = sp.endpoint;
   if (sp.user) where.abSystemUserName = { contains: sp.user, mode: 'insensitive' };
-  if (periodFrom) where.createdAt = { gte: periodFrom };
+  if (rangeFilter) where.createdAt = rangeFilter;
   if (sp.downloaded === '1') where.downloaded = true;
   if (sp.downloaded === '0') where.downloaded = false;
   if (sp.horizontallyExpanded === '1') where.horizontallyExpanded = true;
@@ -173,6 +181,8 @@ export default async function EventsPage({
           endpoint: sp.endpoint ?? '',
           user: sp.user ?? '',
           period: period ?? '',
+          from: range.fromStr,
+          to: range.toStr,
           downloaded: sp.downloaded ?? '',
           horizontallyExpanded: sp.horizontallyExpanded ?? '',
         }}
@@ -355,14 +365,5 @@ function endpointLabel(endpoint: string): string {
 }
 
 function formatShort(iso: string) {
-  try {
-    return new Intl.DateTimeFormat('ja-JP', {
-      month: '2-digit',
-      day: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit',
-    }).format(new Date(iso));
-  } catch {
-    return iso;
-  }
+  return formatJstShortDateTime(iso);
 }

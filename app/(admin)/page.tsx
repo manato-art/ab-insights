@@ -1,7 +1,9 @@
 // 管理ダッシュボード (Server Component)
 // - 学習収集トグル
-// - 統計カード (総イベント / 今月 / DL率)
+// - 期間フィルタ (期間 chip + カレンダー範囲)
+// - 統計カード (総イベント / 期間内 / DL率)
 // - ジャンル別テーブル
+// - 日別内訳テーブル (期間範囲内の日付ごとの件数とシグナル)
 // - 直近イベント 5 件
 
 import Link from 'next/link';
@@ -22,9 +24,23 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { getLearningEnabled } from './settings-helpers';
 import LearningToggle from './learning-toggle';
-import { parsePeriod, periodStartDate, type Period } from '@/lib/period';
+import {
+  parsePeriod,
+  parseDateRange,
+  resolveRangeFilter,
+  type Period,
+  type DateRange,
+} from '@/lib/period';
+import {
+  formatJstShortDateTime,
+  jstDateInputValue,
+  JST_TIMEZONE,
+} from '@/lib/format';
 
 export const dynamic = 'force-dynamic';
 
@@ -43,27 +59,53 @@ type GenreRow = {
   avgHitScore: number | null;
 };
 
+type DailyRow = {
+  day: string; // YYYY-MM-DD (JST)
+  total: number;
+  downloaded: number;
+  expanded: number;
+  edited: number;
+};
+
+type RangeFilter = { gte?: Date; lt?: Date } | null;
+
 function pct(numerator: number, denominator: number): string {
   if (denominator === 0) return '—';
   return `${((numerator / denominator) * 100).toFixed(1)}%`;
 }
 
-function formatDate(d: Date): string {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  const h = String(d.getHours()).padStart(2, '0');
-  const mi = String(d.getMinutes()).padStart(2, '0');
-  return `${y}/${m}/${day} ${h}:${mi}`;
+const DAY_FORMATTER_JST = new Intl.DateTimeFormat('en-CA', {
+  timeZone: JST_TIMEZONE,
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+});
+
+const WEEKDAY_FORMATTER_JST = new Intl.DateTimeFormat('ja-JP', {
+  timeZone: JST_TIMEZONE,
+  weekday: 'short',
+});
+
+function jstDayKey(d: Date): string {
+  return DAY_FORMATTER_JST.format(d);
+}
+
+function formatJstDayLabel(dayKey: string): string {
+  // dayKey は YYYY-MM-DD (JST)。曜日付きで `2026/04/30 (木)` のように表示。
+  // JST 0:00 を UTC に直してフォーマッタに渡す。
+  const [y, m, d] = dayKey.split('-').map(Number);
+  if (!y || !m || !d) return dayKey;
+  const utcMid = new Date(Date.UTC(y, m - 1, d) - 9 * 60 * 60 * 1000);
+  const wd = WEEKDAY_FORMATTER_JST.format(utcMid);
+  return `${y}/${String(m).padStart(2, '0')}/${String(d).padStart(2, '0')} (${wd})`;
 }
 
 // ============================================================
 // データ取得
 // ============================================================
 
-async function getDashboardData(period: Period) {
-  const periodFrom = periodStartDate(period);
-  const rangeFilter = periodFrom ? { createdAt: { gte: periodFrom } } : {};
+async function getDashboardData(rangeFilter: RangeFilter) {
+  const where = rangeFilter ? { createdAt: rangeFilter } : {};
 
   const [
     totalEvents,
@@ -74,16 +116,16 @@ async function getDashboardData(period: Period) {
     learningEnabled,
   ] = await Promise.all([
     prisma.event.count(),
-    prisma.event.count({ where: rangeFilter }),
-    prisma.event.count({ where: { ...rangeFilter, downloaded: true } }),
+    prisma.event.count({ where }),
+    prisma.event.count({ where: { ...where, downloaded: true } }),
     prisma.event.groupBy({
       by: ['genre'],
-      where: rangeFilter,
+      where,
       _count: { _all: true },
       orderBy: { _count: { id: 'desc' } },
     }),
     prisma.event.findMany({
-      where: rangeFilter,
+      where,
       orderBy: { createdAt: 'desc' },
       take: 5,
       select: {
@@ -100,13 +142,13 @@ async function getDashboardData(period: Period) {
   // ジャンル別の詳細(downloaded/expanded/edited/avgHit)は個別クエリで
   const genreRows: GenreRow[] = await Promise.all(
     genreGroups.map(async (g) => {
-      const where = { ...rangeFilter, genre: g.genre };
+      const w = { ...where, genre: g.genre };
       const [downloaded, expanded, edited, avg] = await Promise.all([
-        prisma.event.count({ where: { ...where, downloaded: true } }),
-        prisma.event.count({ where: { ...where, horizontallyExpanded: true } }),
-        prisma.event.count({ where: { ...where, aiEdited: true } }),
+        prisma.event.count({ where: { ...w, downloaded: true } }),
+        prisma.event.count({ where: { ...w, horizontallyExpanded: true } }),
+        prisma.event.count({ where: { ...w, aiEdited: true } }),
         prisma.event.aggregate({
-          where,
+          where: w,
           _avg: { hitScore: true },
         }),
       ]);
@@ -131,6 +173,54 @@ async function getDashboardData(period: Period) {
   };
 }
 
+/**
+ * 日別内訳。期間が指定されていなければ直近 30 日にフォールバック。
+ * 件数が大量になる場合に備えて取得カラムは最小限。
+ */
+async function getDailyBreakdown(
+  rangeFilter: RangeFilter,
+  fallbackDays = 30,
+): Promise<DailyRow[]> {
+  let where: { createdAt?: { gte?: Date; lt?: Date } };
+  if (rangeFilter) {
+    where = { createdAt: rangeFilter };
+  } else {
+    const since = new Date(Date.now() - fallbackDays * 24 * 60 * 60 * 1000);
+    where = { createdAt: { gte: since } };
+  }
+
+  const events = await prisma.event.findMany({
+    where,
+    select: {
+      createdAt: true,
+      downloaded: true,
+      horizontallyExpanded: true,
+      aiEdited: true,
+    },
+  });
+
+  const map = new Map<string, DailyRow>();
+  for (const e of events) {
+    const day = jstDayKey(e.createdAt);
+    const cur =
+      map.get(day) ??
+      ({
+        day,
+        total: 0,
+        downloaded: 0,
+        expanded: 0,
+        edited: 0,
+      } satisfies DailyRow);
+    cur.total++;
+    if (e.downloaded) cur.downloaded++;
+    if (e.horizontallyExpanded) cur.expanded++;
+    if (e.aiEdited) cur.edited++;
+    map.set(day, cur);
+  }
+
+  return Array.from(map.values()).sort((a, b) => (a.day < b.day ? 1 : -1));
+}
+
 // ============================================================
 // ページ
 // ============================================================
@@ -151,22 +241,48 @@ const PERIOD_HINT: Record<string, string> = {
 export default async function DashboardPage({
   searchParams,
 }: {
-  searchParams: Promise<{ period?: string }>;
+  searchParams: Promise<{ period?: string; from?: string; to?: string }>;
 }) {
   const sp = await searchParams;
   const period = parsePeriod(sp.period);
+  const range = parseDateRange(sp.from, sp.to);
+  const rangeFilter = resolveRangeFilter(period, range);
+  const usingExplicitRange = Boolean(range.fromStr || range.toStr);
 
-  const {
-    totalEvents,
-    rangeEvents,
-    downloadedTotal,
-    genreRows,
-    recentEvents,
-    learningEnabled,
-  } = await getDashboardData(period);
+  const [
+    {
+      totalEvents,
+      rangeEvents,
+      downloadedTotal,
+      genreRows,
+      recentEvents,
+      learningEnabled,
+    },
+    dailyRows,
+  ] = await Promise.all([
+    getDashboardData(rangeFilter),
+    getDailyBreakdown(rangeFilter),
+  ]);
 
   const rangeDlRate = pct(downloadedTotal, rangeEvents);
-  const periodLabel = period ? PERIOD_HINT[period] : '全期間';
+
+  // 表示ラベル
+  let periodLabel: string;
+  if (usingExplicitRange) {
+    const left = range.fromStr || '指定なし';
+    const right = range.toStr || '指定なし';
+    periodLabel = `${left} 〜 ${right} (JST)`;
+  } else if (period) {
+    periodLabel = PERIOD_HINT[period];
+  } else {
+    periodLabel = '全期間';
+  }
+
+  const dailyHint = usingExplicitRange
+    ? '指定範囲内の日別件数 (JST)'
+    : period
+      ? `${PERIOD_CHIPS.find((c) => c.value === period)?.label ?? ''}の日別件数 (JST)`
+      : '直近 30 日の日別件数 (JST)';
 
   return (
     <div className="space-y-6">
@@ -195,22 +311,78 @@ export default async function DashboardPage({
       </Card>
 
       {/* 期間フィルタ */}
-      <div className="flex items-center gap-2 flex-wrap">
-        <span className="text-xs text-muted-foreground mr-1">期間:</span>
-        {PERIOD_CHIPS.map((c) => (
-          <Link
-            key={c.value || 'all'}
-            href={c.value ? `/?period=${c.value}` : '/'}
-            className={`h-8 inline-flex items-center px-3 rounded-md text-xs border transition ${
-              (period ?? '') === c.value
-                ? 'bg-primary text-primary-foreground border-primary'
-                : 'border-input hover:bg-accent'
-            }`}
-          >
-            {c.label}
-          </Link>
-        ))}
-      </div>
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base">期間フィルタ</CardTitle>
+          <CardDescription>
+            プリセット or カレンダーで期間を指定 (JST 基準)
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {/* chip 行 */}
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-xs text-muted-foreground mr-1">プリセット:</span>
+            {PERIOD_CHIPS.map((c) => (
+              <Link
+                key={c.value || 'all'}
+                href={c.value ? `/?period=${c.value}` : '/'}
+                className={`h-8 inline-flex items-center px-3 rounded-md text-xs border transition ${
+                  !usingExplicitRange && (period ?? '') === c.value
+                    ? 'bg-primary text-primary-foreground border-primary'
+                    : 'border-input hover:bg-accent'
+                }`}
+              >
+                {c.label}
+              </Link>
+            ))}
+          </div>
+
+          {/* カレンダー範囲 */}
+          <form action="/" method="get" className="flex flex-wrap items-end gap-3">
+            <div className="space-y-1.5">
+              <Label htmlFor="from" className="text-xs">
+                開始日
+              </Label>
+              <Input
+                id="from"
+                type="date"
+                name="from"
+                defaultValue={range.fromStr}
+                max={
+                  range.toStr || jstDateInputValue(new Date())
+                }
+                className="h-8 w-[170px]"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="to" className="text-xs">
+                終了日
+              </Label>
+              <Input
+                id="to"
+                type="date"
+                name="to"
+                defaultValue={range.toStr}
+                min={range.fromStr || undefined}
+                max={jstDateInputValue(new Date())}
+                className="h-8 w-[170px]"
+              />
+            </div>
+            <Button type="submit" size="sm">
+              適用
+            </Button>
+            {usingExplicitRange && (
+              <Button type="button" variant="outline" size="sm" asChild>
+                <Link href="/">クリア</Link>
+              </Button>
+            )}
+            <p className="text-[11px] text-muted-foreground basis-full">
+              開始/終了は<strong className="font-medium">その日を含む</strong>
+              範囲です。範囲を指定するとプリセットは無効化されます。
+            </p>
+          </form>
+        </CardContent>
+      </Card>
 
       {/* 統計カード */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -220,7 +392,13 @@ export default async function DashboardPage({
           hint="これまでに記録された生成画像の合計(全期間)"
         />
         <StatCard
-          label={period ? `${PERIOD_CHIPS.find((c) => c.value === period)?.label}の生成画像` : '期間内の生成画像'}
+          label={
+            usingExplicitRange
+              ? '範囲内の生成画像'
+              : period
+                ? `${PERIOD_CHIPS.find((c) => c.value === period)?.label}の生成画像`
+                : '期間内の生成画像'
+          }
           value={rangeEvents.toLocaleString()}
           hint={periodLabel}
         />
@@ -230,6 +408,56 @@ export default async function DashboardPage({
           hint={`${downloadedTotal.toLocaleString()} / ${rangeEvents.toLocaleString()} 生成画像(${periodLabel})`}
         />
       </div>
+
+      {/* 日別内訳 */}
+      <Card>
+        <CardHeader>
+          <CardTitle>日別内訳</CardTitle>
+          <CardDescription>{dailyHint}</CardDescription>
+        </CardHeader>
+        <CardContent className="px-0">
+          {dailyRows.length === 0 ? (
+            <EmptyState message="この期間にイベントはありません" />
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>日付 (JST)</TableHead>
+                  <TableHead className="text-right">生成数</TableHead>
+                  <TableHead className="text-right">DL</TableHead>
+                  <TableHead className="text-right">横展開</TableHead>
+                  <TableHead className="text-right">AI編集</TableHead>
+                  <TableHead className="text-right">DL率</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {dailyRows.map((row) => (
+                  <TableRow key={row.day}>
+                    <TableCell className="font-mono text-xs">
+                      {formatJstDayLabel(row.day)}
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {row.total.toLocaleString()}
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {row.downloaded.toLocaleString()}
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {row.expanded.toLocaleString()}
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {row.edited.toLocaleString()}
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {pct(row.downloaded, row.total)}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+        </CardContent>
+      </Card>
 
       {/* ジャンル別テーブル */}
       <Card>
@@ -289,7 +517,7 @@ export default async function DashboardPage({
       <Card>
         <CardHeader>
           <CardTitle>直近の生成画像</CardTitle>
-          <CardDescription>最新 5 件</CardDescription>
+          <CardDescription>最新 5 件 (JST)</CardDescription>
         </CardHeader>
         <CardContent className="px-0">
           {recentEvents.length === 0 ? (
@@ -320,7 +548,7 @@ export default async function DashboardPage({
                       )}
                     </TableCell>
                     <TableCell className="text-xs text-muted-foreground">
-                      {formatDate(ev.createdAt)}
+                      {formatJstShortDateTime(ev.createdAt)}
                     </TableCell>
                     <TableCell className="text-right">
                       {ev.downloaded ? (

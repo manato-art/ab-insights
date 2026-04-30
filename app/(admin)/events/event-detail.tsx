@@ -15,6 +15,7 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
+import { formatJstDateTimeSec } from '@/lib/format';
 
 export type EventDetailImage = {
   id: number;
@@ -568,18 +569,7 @@ function endpointLabel(endpoint: string): string {
 }
 
 function formatDateTime(iso: string) {
-  try {
-    return new Intl.DateTimeFormat('ja-JP', {
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
-    }).format(new Date(iso));
-  } catch {
-    return iso;
-  }
+  return formatJstDateTimeSec(iso);
 }
 
 function tryFormatJson(s: string) {

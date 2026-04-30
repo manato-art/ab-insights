@@ -10,6 +10,7 @@ import {
   type GenreSignals,
   type PromptBlockDraft,
 } from '../types';
+import { formatJstDateTime } from '@/lib/format';
 
 const TEXT_MODEL = 'gpt-4o-mini';
 
@@ -20,7 +21,7 @@ export async function buildAppealSubBlock(
     kind: 'appeal-sub',
     blockName: BLOCK_NAME_BY_KIND['appeal-sub'],
     priority: BLOCK_PRIORITY_BY_KIND['appeal-sub'],
-    note: `自動生成: ${new Date().toLocaleString('ja-JP')} / サブラベル統計: ${signals.subLabelStats.length} 件 / 書き換え: ${signals.topRewrites.length} 件`,
+    note: `自動生成: ${formatJstDateTime(new Date())} / サブラベル統計: ${signals.subLabelStats.length} 件 / 書き換え: ${signals.topRewrites.length} 件`,
   };
 
   const hasAny =

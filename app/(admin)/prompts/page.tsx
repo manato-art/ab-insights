@@ -24,6 +24,7 @@ import {
 } from './prompt-editor';
 import { GeneratePromptPanel } from './generate-panel';
 import { InlineContentEditor } from './inline-content-editor';
+import { formatJstDateTime } from '@/lib/format';
 
 export const metadata = { title: 'プロンプト管理 — ab-insights' };
 
@@ -365,15 +366,5 @@ function PreviewPanel({
 }
 
 function formatDateTime(d: Date) {
-  try {
-    return new Intl.DateTimeFormat('ja-JP', {
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit',
-    }).format(d);
-  } catch {
-    return String(d);
-  }
+  return formatJstDateTime(d);
 }

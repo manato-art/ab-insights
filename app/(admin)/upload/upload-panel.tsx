@@ -20,6 +20,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { LearnedEditorButton } from './learned-editor';
+import { formatJstDateTime } from '@/lib/format';
 
 type ThumbItem = {
   eventId: number;
@@ -250,11 +251,7 @@ export default function UploadPanel({ stats }: { stats: GenreStat[] }) {
               )}
               {s.uploadedAt && (
                 <div className="text-xs text-muted-foreground">
-                  最終アップロード:{' '}
-                  {new Intl.DateTimeFormat('ja-JP', {
-                    dateStyle: 'short',
-                    timeStyle: 'short',
-                  }).format(new Date(s.uploadedAt))}
+                  最終アップロード: {formatJstDateTime(s.uploadedAt)}
                 </div>
               )}
               <div className="flex gap-2 flex-wrap">
@@ -455,7 +452,7 @@ function ThumbTile({ thumb }: { thumb: ThumbItem }) {
               {thumb.hitScore != null && <>hit: {(thumb.hitScore * 100).toFixed(0)}% / </>}
               {thumb.downloaded && 'DL済 / '}
               {thumb.aiEdited && 'AI編集済 / '}
-              {new Intl.DateTimeFormat('ja-JP', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(thumb.createdAt))}
+              {formatJstDateTime(thumb.createdAt)}
             </DialogDescription>
           </DialogHeader>
           {thumb.dataUrl ? (

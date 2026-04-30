@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache';
 import { prisma } from '@/lib/db';
 import { getCurrentSession } from '@/lib/auth';
 import { computeGenreLearning, summarizeWithAI } from '@/lib/insights';
+import { formatJstDateTime } from '@/lib/format';
 
 const LEARNED_BLOCK_NAME = '学習済みインサイト';
 const LEARNED_BLOCK_PRIORITY = 100; // 既存の手動ブロックより後ろに来る(ソート昇順で末尾)
@@ -68,7 +69,7 @@ export async function uploadGenreLearning(genre: string): Promise<UploadResult> 
     });
 
     const note = [
-      `自動生成: ${new Date().toLocaleString('ja-JP')}`,
+      `自動生成: ${formatJstDateTime(new Date())}`,
       `対象 Event: ${learning.eventCount} 件`,
       `DL 率: ${((learning.downloadedCount / Math.max(1, learning.eventCount)) * 100).toFixed(1)}%`,
       `横展開率: ${((learning.expandedCount / Math.max(1, learning.eventCount)) * 100).toFixed(1)}%`,
@@ -271,7 +272,7 @@ export async function updateUploadedGenreContent(
   if (!existing) throw new Error('このジャンルはまだアップロードされていません');
   const editedNote = [
     existing.note || '',
-    `手動編集: ${new Date().toLocaleString('ja-JP')}`,
+    `手動編集: ${formatJstDateTime(new Date())}`,
   ]
     .filter(Boolean)
     .join(' / ');

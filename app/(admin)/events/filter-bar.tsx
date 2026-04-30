@@ -37,6 +37,8 @@ export function FilterBar({
     endpoint: string;
     user: string;
     period: string;
+    from: string;
+    to: string;
     downloaded: string;
     horizontallyExpanded: string;
   };
@@ -51,6 +53,14 @@ export function FilterBar({
       const params = new URLSearchParams(sp.toString());
       if (value) params.set(key, value);
       else params.delete(key);
+      // 範囲指定 ⇄ プリセットは排他
+      if (key === 'period' && value) {
+        params.delete('from');
+        params.delete('to');
+      }
+      if ((key === 'from' || key === 'to') && value) {
+        params.delete('period');
+      }
       // フィルタ変更時は page=1 に戻す
       params.delete('page');
       startTransition(() => {
@@ -59,6 +69,8 @@ export function FilterBar({
     },
     [router, pathname, sp],
   );
+
+  const usingRange = Boolean(initial.from || initial.to);
 
   const reset = () => {
     startTransition(() => {
@@ -144,7 +156,7 @@ export function FilterBar({
       </div>
 
       <div className="space-y-1.5">
-        <Label className="text-xs">期間</Label>
+        <Label className="text-xs">期間プリセット</Label>
         <div className="flex gap-1">
           {PERIOD_CHIPS.map((c) => (
             <button
@@ -152,7 +164,7 @@ export function FilterBar({
               type="button"
               onClick={() => setParam('period', c.value)}
               className={`h-8 px-3 rounded-md text-xs border transition ${
-                initial.period === c.value
+                !usingRange && initial.period === c.value
                   ? 'bg-primary text-primary-foreground border-primary'
                   : 'border-input hover:bg-accent'
               }`}
@@ -161,6 +173,34 @@ export function FilterBar({
             </button>
           ))}
         </div>
+      </div>
+
+      <div className="space-y-1.5">
+        <Label htmlFor="events-from" className="text-xs">
+          開始日 (JST)
+        </Label>
+        <Input
+          id="events-from"
+          type="date"
+          value={initial.from}
+          max={initial.to || undefined}
+          onChange={(e) => setParam('from', e.currentTarget.value)}
+          className="h-8 w-[160px]"
+        />
+      </div>
+
+      <div className="space-y-1.5">
+        <Label htmlFor="events-to" className="text-xs">
+          終了日 (JST)
+        </Label>
+        <Input
+          id="events-to"
+          type="date"
+          value={initial.to}
+          min={initial.from || undefined}
+          onChange={(e) => setParam('to', e.currentTarget.value)}
+          className="h-8 w-[160px]"
+        />
       </div>
 
       <div className="ml-auto">

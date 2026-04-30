@@ -35,6 +35,7 @@ import {
   activateApiTokenAction,
   deleteApiTokenAction,
 } from './actions';
+import { formatJstDateTime } from '@/lib/format';
 
 export type TokenRow = {
   id: number;
@@ -49,13 +50,7 @@ type Props = {
 };
 
 function formatDate(d: Date | null): string {
-  if (!d) return '—';
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  const h = String(d.getHours()).padStart(2, '0');
-  const mi = String(d.getMinutes()).padStart(2, '0');
-  return `${y}/${m}/${day} ${h}:${mi}`;
+  return formatJstDateTime(d);
 }
 
 export default function TokenManager({ tokens }: Props) {

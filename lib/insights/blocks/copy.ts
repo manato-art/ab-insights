@@ -9,6 +9,7 @@ import {
   type GenreSignals,
   type PromptBlockDraft,
 } from '../types';
+import { formatJstDateTime } from '@/lib/format';
 
 const MIN_COPIES_FOR_AI = 3;
 const TEXT_MODEL = 'gpt-4o-mini';
@@ -20,7 +21,7 @@ export async function buildCopyBlock(
     kind: 'copy',
     blockName: BLOCK_NAME_BY_KIND['copy'],
     priority: BLOCK_PRIORITY_BY_KIND['copy'],
-    note: `自動生成: ${new Date().toLocaleString('ja-JP')} / 刺さりコピー: ${signals.hitCopies.length} 件 / TOP ワード: ${signals.topKeywords.length}`,
+    note: `自動生成: ${formatJstDateTime(new Date())} / 刺さりコピー: ${signals.hitCopies.length} 件 / TOP ワード: ${signals.topKeywords.length}`,
   };
 
   if (signals.hitCopies.length < MIN_COPIES_FOR_AI) {

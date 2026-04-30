@@ -9,6 +9,7 @@ import {
   type GenreSignals,
   type PromptBlockDraft,
 } from '../types';
+import { formatJstDateTime } from '@/lib/format';
 
 const MIN_IMAGES_FOR_AI = 3;
 const VISION_MODEL = 'gpt-4o-mini';
@@ -129,7 +130,7 @@ function pct(num: number, denom: number): string {
 
 function noteFor(signals: GenreSignals): string {
   const parts: string[] = [
-    `自動生成: ${new Date().toLocaleString('ja-JP')}`,
+    `自動生成: ${formatJstDateTime(new Date())}`,
     `対象 Event: ${signals.eventCount} 件`,
     `DL 画像: ${signals.savedImages.length} 枚`,
   ];

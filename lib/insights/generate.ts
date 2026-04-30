@@ -6,6 +6,7 @@ import { buildSuccessImageBlock } from './blocks/success-image';
 import { buildCopyBlock } from './blocks/copy';
 import { buildAppealSubBlock } from './blocks/appeal-sub';
 import type { GenreSignals, PromptBlockDraft } from './types';
+import { formatJstDateTime } from '@/lib/format';
 
 export type GenerateBlocksOutcome = {
   genre: string;
@@ -58,7 +59,7 @@ async function safeBuild<K extends 'success-image' | 'copy' | 'appeal-sub'>(
       content: `##${BLOCK_NAME_BY_KIND[kind]}##\n(生成中に内部エラーが発生しました: ${msg})`,
       enhanced: false,
       model: null,
-      note: `失敗: ${new Date().toLocaleString('ja-JP')}`,
+      note: `失敗: ${formatJstDateTime(new Date())}`,
       error: msg,
     };
   }

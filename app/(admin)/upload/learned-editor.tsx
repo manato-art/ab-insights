@@ -16,6 +16,7 @@ import {
   DialogTitle,
   DialogFooter,
 } from '@/components/ui/dialog';
+import { formatJstDateTime } from '@/lib/format';
 import {
   getUploadedGenreDetail,
   updateUploadedGenreContent,
@@ -108,11 +109,7 @@ export function LearnedEditorButton({
               )}
               {updatedAt && (
                 <div className="text-[11px] text-muted-foreground">
-                  最終更新:{' '}
-                  {new Intl.DateTimeFormat('ja-JP', {
-                    dateStyle: 'short',
-                    timeStyle: 'short',
-                  }).format(new Date(updatedAt))}
+                  最終更新: {formatJstDateTime(updatedAt)}
                 </div>
               )}
             </>
