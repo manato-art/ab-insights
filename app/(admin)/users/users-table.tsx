@@ -297,6 +297,9 @@ function UserDetailView({
           </div>
         </section>
 
+        {/* 期間指定エクスポート */}
+        <ExportSection userId={user.abSystemUserId} />
+
         {/* 月別履歴 */}
         <section>
           <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
@@ -549,6 +552,110 @@ function ProfileForm({
         </Button>
       </div>
     </form>
+  );
+}
+
+function ExportSection({ userId }: { userId: string }) {
+  const [from, setFrom] = useState('');
+  const [to, setTo] = useState('');
+
+  const buildHref = (base: string): string => {
+    const p = new URLSearchParams();
+    p.set('userId', userId);
+    if (from) p.set('from', from);
+    if (to) p.set('to', to);
+    return `${base}?${p.toString()}`;
+  };
+
+  const csvHref = buildHref('/api/export/events.csv');
+  const printHref = buildHref('/events/print');
+  const hasRange = from !== '' || to !== '';
+  // to >= from バリデーション (どちらも入っているときだけ判定)
+  const invalidRange = from !== '' && to !== '' && to < from;
+
+  return (
+    <section>
+      <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
+        期間指定エクスポート
+      </h3>
+      <div className="rounded-md ring-1 ring-border p-3 space-y-3">
+        <div className="grid grid-cols-1 md:grid-cols-[1fr_1fr_auto] gap-2 items-end">
+          <div className="space-y-1">
+            <Label htmlFor={`exp-from-${userId}`} className="text-[11px]">
+              開始日 (JST)
+            </Label>
+            <Input
+              id={`exp-from-${userId}`}
+              type="date"
+              value={from}
+              onChange={(e) => setFrom(e.target.value)}
+              max={to || undefined}
+              className="h-9"
+            />
+          </div>
+          <div className="space-y-1">
+            <Label htmlFor={`exp-to-${userId}`} className="text-[11px]">
+              終了日 (JST, この日を含む)
+            </Label>
+            <Input
+              id={`exp-to-${userId}`}
+              type="date"
+              value={to}
+              onChange={(e) => setTo(e.target.value)}
+              min={from || undefined}
+              className="h-9"
+            />
+          </div>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={() => {
+              setFrom('');
+              setTo('');
+            }}
+            disabled={!hasRange}
+          >
+            クリア
+          </Button>
+        </div>
+
+        {invalidRange && (
+          <p className="text-xs text-destructive">
+            終了日は開始日以降の日付を指定してください
+          </p>
+        )}
+
+        <div className="flex flex-wrap gap-2">
+          <Button variant="outline" size="sm" asChild disabled={invalidRange}>
+            <a
+              href={csvHref}
+              download
+              onClick={(e) => {
+                if (invalidRange) e.preventDefault();
+              }}
+            >
+              CSV ダウンロード
+            </a>
+          </Button>
+          <Button variant="outline" size="sm" asChild disabled={invalidRange}>
+            <Link
+              href={printHref}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={(e) => {
+                if (invalidRange) e.preventDefault();
+              }}
+            >
+              印刷 / PDF 保存
+            </Link>
+          </Button>
+          <span className="text-[11px] text-muted-foreground self-center ml-auto">
+            {hasRange ? '指定範囲のみ出力' : '期間未指定 = 全期間を出力'}
+          </span>
+        </div>
+      </div>
+    </section>
   );
 }
 
