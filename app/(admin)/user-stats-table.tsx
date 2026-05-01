@@ -5,6 +5,7 @@
 // - 行クリックで Dialog を開き、エンドポイント別内訳と直近工程を表示
 
 import { useState } from 'react';
+import Link from 'next/link';
 import {
   Dialog,
   DialogContent,
@@ -21,6 +22,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { formatJstShortDateTime } from '@/lib/format';
 import { endpointLabel, type UserRow } from './dashboard-types';
 
@@ -168,9 +170,18 @@ function UserDetail({ user }: { user: UserRow }) {
 
         {/* 直近工程 */}
         <section>
-          <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
-            直近の工程 (最新 10 件)
-          </h3>
+          <div className="flex items-end justify-between mb-2 gap-2">
+            <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+              直近の工程 (最新 10 件)
+            </h3>
+            <Button variant="outline" size="xs" asChild>
+              <Link
+                href={`/events?userId=${encodeURIComponent(user.abSystemUserId)}`}
+              >
+                全工程を見る →
+              </Link>
+            </Button>
+          </div>
           {user.recentEvents.length === 0 ? (
             <p className="text-sm text-muted-foreground">(データなし)</p>
           ) : (

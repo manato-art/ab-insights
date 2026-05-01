@@ -3,11 +3,7 @@
 // - 行クリックで詳細 Dialog(client component で制御)
 import Link from 'next/link';
 import { prisma } from '@/lib/db';
-import {
-  parsePeriod,
-  parseDateRange,
-  resolveRangeFilter,
-} from '@/lib/period';
+import { buildEventsFilter, type EventsSearchParams } from '@/lib/event-filter';
 import { formatJstShortDateTime } from '@/lib/format';
 import {
   Table,
@@ -30,18 +26,7 @@ export const metadata = { title: '工程履歴一覧 — ab-insights' };
 const DEFAULT_PER_PAGE = 50;
 const MAX_PER_PAGE = 200;
 
-type SearchParams = {
-  page?: string;
-  perPage?: string;
-  genre?: string;
-  endpoint?: string;
-  user?: string;
-  period?: string; // 'today' | 'week' | 'month'
-  from?: string; // YYYY-MM-DD (JST)
-  to?: string; // YYYY-MM-DD (JST)
-  downloaded?: string;
-  horizontallyExpanded?: string;
-};
+type SearchParams = EventsSearchParams;
 
 export default async function EventsPage({
   searchParams,
@@ -56,27 +41,8 @@ export default async function EventsPage({
     MAX_PER_PAGE,
   );
 
-  // --- where 構築 ---
-  const period = parsePeriod(sp.period);
-  const range = parseDateRange(sp.from, sp.to);
-  const rangeFilter = resolveRangeFilter(period, range);
-
-  const where: {
-    genre?: string;
-    endpoint?: string;
-    abSystemUserName?: { contains: string; mode: 'insensitive' };
-    createdAt?: { gte?: Date; lt?: Date };
-    downloaded?: boolean;
-    horizontallyExpanded?: boolean;
-  } = {};
-  if (sp.genre) where.genre = sp.genre;
-  if (sp.endpoint) where.endpoint = sp.endpoint;
-  if (sp.user) where.abSystemUserName = { contains: sp.user, mode: 'insensitive' };
-  if (rangeFilter) where.createdAt = rangeFilter;
-  if (sp.downloaded === '1') where.downloaded = true;
-  if (sp.downloaded === '0') where.downloaded = false;
-  if (sp.horizontallyExpanded === '1') where.horizontallyExpanded = true;
-  if (sp.horizontallyExpanded === '0') where.horizontallyExpanded = false;
+  // --- where 構築 (共通ヘルパ) ---
+  const { where, period, range } = buildEventsFilter(sp);
 
   // --- 並列で count + data + 詳細(images + aiEdits) を一回取得 ---
   const [total, rows] = await Promise.all([
@@ -166,13 +132,38 @@ export default async function EventsPage({
 
   const totalPages = Math.max(1, Math.ceil(total / perPage));
 
+  // 現在のフィルタを保ったまま エクスポート / 印刷 へ渡す
+  const exportQuery = (() => {
+    const params = new URLSearchParams();
+    for (const [k, v] of Object.entries(sp)) {
+      if (v && k !== 'page' && k !== 'perPage') params.set(k, String(v));
+    }
+    return params.toString();
+  })();
+  const csvHref = `/api/export/events.csv${exportQuery ? `?${exportQuery}` : ''}`;
+  const printHref = `/events/print${exportQuery ? `?${exportQuery}` : ''}`;
+
   return (
     <div className="space-y-5">
-      <div>
-        <h1 className="text-2xl font-semibold">工程履歴一覧</h1>
-        <p className="text-sm text-muted-foreground mt-1">
-          ab-system からの画像生成記録を閲覧します。
-        </p>
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-semibold">工程履歴一覧</h1>
+          <p className="text-sm text-muted-foreground mt-1">
+            ab-system からの画像生成記録を閲覧します。
+          </p>
+        </div>
+        <div className="flex gap-2 shrink-0">
+          <Button variant="outline" size="sm" asChild>
+            <a href={csvHref} download>
+              CSV ダウンロード
+            </a>
+          </Button>
+          <Button variant="outline" size="sm" asChild>
+            <Link href={printHref} target="_blank" rel="noopener noreferrer">
+              印刷 / PDF 保存
+            </Link>
+          </Button>
+        </div>
       </div>
 
       <FilterBar
@@ -187,6 +178,19 @@ export default async function EventsPage({
           horizontallyExpanded: sp.horizontallyExpanded ?? '',
         }}
       />
+
+      {sp.userId && (
+        <div className="flex items-center gap-2 px-3 py-2 rounded-md bg-primary/5 ring-1 ring-primary/20 text-xs">
+          <span className="text-muted-foreground">ユーザー絞り込み中:</span>
+          <code className="font-mono">{sp.userId}</code>
+          <Link
+            href="/events"
+            className="ml-auto text-primary hover:underline"
+          >
+            解除
+          </Link>
+        </div>
+      )}
 
       <div className="flex items-center justify-between text-xs text-muted-foreground">
         <div>
