@@ -2,14 +2,26 @@
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 
+/* Editorial / Operations Console テーマ — warm cream + orange + navy。
+   見出しセリフは next/font/google の Source Serif 4 を root layout で読み込み、
+   --font-source-serif を CSS 変数として注入する。 */
+
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: "Geist", "Geist Fallback", ui-sans-serif, system-ui, sans-serif;
-  --font-mono: "Geist Mono", "Geist Mono Fallback", ui-monospace, monospace;
-  --font-heading: var(--font-sans);
+  --font-sans: var(--font-geist-sans), "Geist", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), "Geist Mono", ui-monospace, monospace;
+  --font-serif: var(--font-source-serif), "Iowan Old Style", Georgia, "Times New Roman", "Hiragino Mincho ProN", "Yu Mincho", serif;
+  --font-heading: var(--font-serif);
+  --color-paper: var(--paper);
+  --color-ink: var(--ink);
+  --color-orange: var(--brand-orange);
+  --color-orange-soft: var(--brand-orange-soft);
+  --color-navy: var(--brand-navy);
+  --color-navy-soft: var(--brand-navy-soft);
+  --color-hairline: var(--hairline);
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -49,38 +61,49 @@
 }
 
 :root {
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
+  /* ブランド固有 (生値・直接参照可) */
+  --paper: oklch(0.962 0.012 78);
+  --ink: oklch(0.18 0.012 60);
+  --hairline: oklch(0.9 0.018 75);
+  --brand-orange: oklch(0.66 0.16 50);
+  --brand-orange-soft: oklch(0.86 0.07 60);
+  --brand-navy: oklch(0.32 0.07 256);
+  --brand-navy-soft: oklch(0.78 0.04 256);
+
+  /* shadcn 互換トークン */
+  --background: var(--paper);
+  --foreground: var(--ink);
   --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
+  --card-foreground: var(--ink);
   --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
+  --popover-foreground: var(--ink);
+  --primary: var(--brand-orange);
+  --primary-foreground: oklch(0.99 0 0);
+  --secondary: oklch(0.96 0.01 75);
+  --secondary-foreground: var(--ink);
+  --muted: oklch(0.94 0.01 75);
+  --muted-foreground: oklch(0.5 0.018 65);
+  --accent: oklch(0.93 0.05 60);
+  --accent-foreground: oklch(0.32 0.1 50);
+  --destructive: oklch(0.55 0.21 27);
+  --border: var(--hairline);
+  --input: var(--hairline);
+  --ring: var(--brand-orange);
+  /* チャート 5 色: orange → navy → orange-soft → navy-soft → ink */
+  --chart-1: var(--brand-orange);
+  --chart-2: var(--brand-navy);
+  --chart-3: var(--brand-orange-soft);
+  --chart-4: var(--brand-navy-soft);
+  --chart-5: var(--ink);
   --radius: 0.625rem;
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
+  --sidebar: oklch(1 0 0);
+  --sidebar-foreground: var(--ink);
+  --sidebar-primary: var(--brand-orange);
+  --sidebar-primary-foreground: oklch(0.99 0 0);
+  --sidebar-accent: oklch(0.94 0.04 60);
+  --sidebar-accent-foreground: oklch(0.32 0.1 50);
+  --sidebar-border: var(--hairline);
+  --sidebar-ring: var(--brand-orange);
 }
 
 .dark {
@@ -127,4 +150,36 @@
   html {
     @apply font-sans;
   }
+}
+
+/* 背景ポワポワ (BackgroundBlobs)。浮遊と僅かな脈動。 */
+@keyframes blob-drift-a {
+  0%   { transform: translate3d(0, 0, 0) scale(1); }
+  50%  { transform: translate3d(40px, 30px, 0) scale(1.06); }
+  100% { transform: translate3d(0, 0, 0) scale(1); }
+}
+@keyframes blob-drift-b {
+  0%   { transform: translate3d(0, 0, 0) scale(1); }
+  50%  { transform: translate3d(-50px, 40px, 0) scale(0.95); }
+  100% { transform: translate3d(0, 0, 0) scale(1); }
+}
+@keyframes blob-drift-c {
+  0%   { transform: translate3d(0, 0, 0) scale(1); }
+  50%  { transform: translate3d(30px, -50px, 0) scale(1.08); }
+  100% { transform: translate3d(0, 0, 0) scale(1); }
+}
+@keyframes blob-drift-d {
+  0%   { transform: translate3d(0, 0, 0) scale(1); }
+  50%  { transform: translate3d(-40px, -30px, 0) scale(0.92); }
+  100% { transform: translate3d(0, 0, 0) scale(1); }
+}
+
+.blob { will-change: transform; }
+.blob-1 { animation: blob-drift-a 22s ease-in-out infinite; }
+.blob-2 { animation: blob-drift-b 28s ease-in-out infinite; }
+.blob-3 { animation: blob-drift-c 26s ease-in-out infinite; }
+.blob-4 { animation: blob-drift-d 24s ease-in-out infinite; }
+
+@media (prefers-reduced-motion: reduce) {
+  .blob-1, .blob-2, .blob-3, .blob-4 { animation: none; }
 }

@@ -1,32 +1,61 @@
 import { redirect } from 'next/navigation';
-import Link from 'next/link';
+import Image from 'next/image';
 import { getCurrentSession, logout } from '@/lib/auth';
 import { Toaster } from '@/components/ui/sonner';
 import { Separator } from '@/components/ui/separator';
+import { BackgroundBlobs } from '@/components/background-blobs';
+import { SidebarNav } from './sidebar-nav';
+import { Topbar } from './topbar';
 
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
   const session = await getCurrentSession();
   if (!session) redirect('/login');
 
   return (
-    <div className="min-h-screen bg-background text-foreground flex">
-      <aside className="w-60 border-r bg-card flex flex-col shrink-0">
-        <div className="px-5 py-5 border-b">
-          <div className="font-mono text-[11px] tracking-widest text-primary uppercase">ab-insights</div>
-          <div className="text-sm font-semibold mt-1">管理コンソール</div>
+    <div
+      className="min-h-screen flex"
+      style={{ background: 'var(--paper)', color: 'var(--ink)' }}
+    >
+      <aside
+        className="w-56 shrink-0 flex flex-col border-r"
+        style={{
+          background: 'var(--sidebar)',
+          borderColor: 'var(--sidebar-border)',
+        }}
+      >
+        {/* ブランドヘッダー */}
+        <div
+          className="px-4 py-4 flex items-center gap-3 border-b"
+          style={{ borderColor: 'var(--sidebar-border)' }}
+        >
+          <div
+            className="w-10 h-10 shrink-0 rounded-md flex items-center justify-center overflow-hidden"
+            style={{ background: 'var(--brand-orange)' }}
+          >
+            <Image
+              src="/logo.png"
+              alt=""
+              width={40}
+              height={40}
+              priority
+              className="rounded-md"
+            />
+          </div>
+          <div className="min-w-0">
+            <div
+              className="text-[15px] leading-tight font-semibold"
+              style={{ fontFamily: 'var(--font-serif)' }}
+            >
+              ab.insights
+            </div>
+            <div className="text-[10px] tracking-[0.22em] uppercase text-muted-foreground">
+              console
+            </div>
+          </div>
         </div>
-        <nav className="flex-1 p-3 space-y-1 text-sm">
-          <NavLink href="/" label="ダッシュボード" />
-          <NavLink href="/users" label="ユーザー管理" />
-          <NavLink href="/appeals" label="訴求ポイント統計" />
-          <NavLink href="/ai-edits" label="AI 修正指示" />
-          <NavLink href="/cross-genre" label="ジャンル転移分析" />
-          <NavLink href="/prompts" label="プロンプト管理" />
-          <NavLink href="/upload" label="学習アップロード" />
-          <NavLink href="/events" label="工程履歴一覧" />
-          <NavLink href="/supabase" label="Supabase" />
-          <NavLink href="/settings" label="設定" />
-        </nav>
+
+        <SidebarNav />
+
         <Separator />
         <form
           action={async () => {
@@ -38,27 +67,21 @@ export default async function AdminLayout({ children }: { children: React.ReactN
         >
           <button
             type="submit"
-            className="w-full text-left text-xs text-muted-foreground hover:text-foreground px-3 py-2 rounded-md hover:bg-accent"
+            className="w-full text-left text-[12px] text-muted-foreground hover:text-foreground px-3 py-2 rounded-md hover:bg-accent transition-colors"
           >
             ログアウト
           </button>
         </form>
       </aside>
-      <main className="flex-1 min-w-0">
-        <div className="px-8 py-8 max-w-6xl">{children}</div>
-      </main>
+
+      <div className="flex-1 min-w-0 flex flex-col">
+        <Topbar />
+        <main className="relative flex-1 px-8 py-8">
+          <BackgroundBlobs />
+          <div className="relative z-[1] max-w-7xl">{children}</div>
+        </main>
+      </div>
       <Toaster />
     </div>
-  );
-}
-
-function NavLink({ href, label }: { href: string; label: string }) {
-  return (
-    <Link
-      href={href}
-      className="block px-3 py-2 rounded-md text-foreground/80 hover:text-foreground hover:bg-accent transition"
-    >
-      {label}
-    </Link>
   );
 }

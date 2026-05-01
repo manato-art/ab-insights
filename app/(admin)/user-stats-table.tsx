@@ -72,7 +72,10 @@ export function UserStatsTable({ users }: { users: UserRow[] }) {
               <TableCell className="text-right tabular-nums">
                 {u.total.toLocaleString()}
               </TableCell>
-              <TableCell className="text-right tabular-nums font-semibold">
+              <TableCell
+                className="text-right tabular-nums font-semibold"
+                style={{ color: 'var(--brand-orange)' }}
+              >
                 {u.images.toLocaleString()}
               </TableCell>
               <TableCell className="text-right tabular-nums">
@@ -158,7 +161,10 @@ function UserDetail({ user }: { user: UserRow }) {
                     <TableCell className="text-right tabular-nums">
                       {b.total.toLocaleString()}
                     </TableCell>
-                    <TableCell className="text-right tabular-nums font-semibold">
+                    <TableCell
+                      className="text-right tabular-nums font-semibold"
+                      style={{ color: 'var(--brand-orange)' }}
+                    >
                       {b.images.toLocaleString()}
                     </TableCell>
                   </TableRow>
