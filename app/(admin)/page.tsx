@@ -28,6 +28,12 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { getLearningEnabled } from './settings-helpers';
 import LearningToggle from './learning-toggle';
+import { UserStatsTable } from './user-stats-table';
+import {
+  endpointLabel,
+  type EndpointRow,
+  type UserRow,
+} from './dashboard-types';
 import {
   parsePeriod,
   parseDateRange,
@@ -54,6 +60,8 @@ type GenreRow = {
   edited: number;
   avgHitScore: number | null;
 };
+
+// 共有型は dashboard-types から import (client component と共有)
 
 type DailyRow = {
   day: string; // YYYY-MM-DD (JST)
@@ -111,6 +119,8 @@ async function getDashboardData(rangeFilter: RangeFilter) {
     rangeImagesAgg,
     downloadedTotal,
     genreGroups,
+    endpointGroups,
+    userGroups,
     learningEnabled,
   ] = await Promise.all([
     prisma.event.count(),
@@ -120,6 +130,20 @@ async function getDashboardData(rangeFilter: RangeFilter) {
     prisma.event.count({ where: { ...where, downloaded: true } }),
     prisma.event.groupBy({
       by: ['genre'],
+      where,
+      _count: { _all: true },
+      _sum: { imageCount: true },
+      orderBy: { _count: { id: 'desc' } },
+    }),
+    prisma.event.groupBy({
+      by: ['endpoint'],
+      where,
+      _count: { _all: true },
+      _sum: { imageCount: true },
+      orderBy: { _count: { id: 'desc' } },
+    }),
+    prisma.event.groupBy({
+      by: ['abSystemUserId'],
       where,
       _count: { _all: true },
       _sum: { imageCount: true },
@@ -156,6 +180,74 @@ async function getDashboardData(rangeFilter: RangeFilter) {
     }),
   );
 
+  const endpointRows: EndpointRow[] = endpointGroups.map((g) => ({
+    endpoint: g.endpoint,
+    total: g._count._all,
+    images: g._sum.imageCount ?? 0,
+  }));
+
+  // ユーザー別: 各ユーザーの エンドポイント別内訳 + 直近 10 件 + 最新の name を個別クエリで取得
+  // 3 人運用想定なのでユーザー数は少ない。
+  // 同一 abSystemUserId でも name が null/有 で混在しているケースがあるため、
+  // groupBy では abSystemUserId だけで集約し、name は最新の非 null 値を別取得する。
+  const userRows: UserRow[] = await Promise.all(
+    userGroups.map(async (u) => {
+      const w = { ...where, abSystemUserId: u.abSystemUserId };
+      const [downloadedCount, byEndpoint, recents, latestNamed] = await Promise.all([
+        prisma.event.count({ where: { ...w, downloaded: true } }),
+        prisma.event.groupBy({
+          by: ['endpoint'],
+          where: w,
+          _count: { _all: true },
+          _sum: { imageCount: true },
+          orderBy: { _count: { id: 'desc' } },
+        }),
+        prisma.event.findMany({
+          where: w,
+          orderBy: { createdAt: 'desc' },
+          take: 10,
+          select: {
+            id: true,
+            endpoint: true,
+            genre: true,
+            imageCount: true,
+            downloaded: true,
+            createdAt: true,
+          },
+        }),
+        // 最新の non-null name を引く (期間外も含めた歴史全体から)
+        prisma.event.findFirst({
+          where: {
+            abSystemUserId: u.abSystemUserId,
+            abSystemUserName: { not: null },
+          },
+          orderBy: { createdAt: 'desc' },
+          select: { abSystemUserName: true },
+        }),
+      ]);
+      return {
+        abSystemUserId: u.abSystemUserId,
+        abSystemUserName: latestNamed?.abSystemUserName ?? null,
+        total: u._count._all,
+        images: u._sum.imageCount ?? 0,
+        downloaded: downloadedCount,
+        endpointBreakdown: byEndpoint.map((e) => ({
+          endpoint: e.endpoint,
+          total: e._count._all,
+          images: e._sum.imageCount ?? 0,
+        })),
+        recentEvents: recents.map((r) => ({
+          id: r.id,
+          endpoint: r.endpoint,
+          genre: r.genre,
+          imageCount: r.imageCount,
+          downloaded: r.downloaded,
+          createdAt: r.createdAt.toISOString(),
+        })),
+      };
+    }),
+  );
+
   return {
     totalEvents,
     totalImages,
@@ -163,6 +255,8 @@ async function getDashboardData(rangeFilter: RangeFilter) {
     rangeImages,
     downloadedTotal,
     genreRows,
+    endpointRows,
+    userRows,
     learningEnabled,
   };
 }
@@ -254,6 +348,8 @@ export default async function DashboardPage({
       rangeImages,
       downloadedTotal,
       genreRows,
+      endpointRows,
+      userRows,
       learningEnabled,
     },
     dailyRows,
@@ -408,6 +504,76 @@ export default async function DashboardPage({
           hint={`${downloadedTotal.toLocaleString()} / ${rangeEvents.toLocaleString()} 工程が DL 済 (${periodLabel})`}
         />
       </div>
+
+      {/* 作業内訳 (エンドポイント別) */}
+      <Card>
+        <CardHeader>
+          <CardTitle>作業内訳</CardTitle>
+          <CardDescription>
+            エンドポイント別の工程数 / 画像枚数 ({periodLabel})
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="px-0">
+          {endpointRows.length === 0 ? (
+            <EmptyState message="この期間に作業はありません" />
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>作業種別</TableHead>
+                  <TableHead className="text-right">工程数</TableHead>
+                  <TableHead className="text-right">画像枚数</TableHead>
+                  <TableHead className="text-right">画像/工程</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {endpointRows.map((row) => (
+                  <TableRow key={row.endpoint}>
+                    <TableCell>
+                      <div className="flex flex-col">
+                        <span className="font-medium">
+                          {endpointLabel(row.endpoint)}
+                        </span>
+                        <span className="text-[11px] text-muted-foreground font-mono">
+                          {row.endpoint}
+                        </span>
+                      </div>
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {row.total.toLocaleString()}
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums font-semibold">
+                      {row.images.toLocaleString()}
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums text-muted-foreground">
+                      {row.total === 0
+                        ? '—'
+                        : (row.images / row.total).toFixed(1)}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* ユーザー別サマリー */}
+      <Card>
+        <CardHeader>
+          <CardTitle>ユーザー別サマリー</CardTitle>
+          <CardDescription>
+            行をクリックすると詳細(作業内訳・直近工程)を表示 ({periodLabel})
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="px-0">
+          {userRows.length === 0 ? (
+            <EmptyState message="この期間にユーザー活動はありません" />
+          ) : (
+            <UserStatsTable users={userRows} />
+          )}
+        </CardContent>
+      </Card>
 
       {/* 日別内訳 */}
       <Card>
