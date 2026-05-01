@@ -7,7 +7,6 @@
 // 認証: admin session が無いと拒否 (ブラウザから ?download で取りに来る前提)。
 
 import { NextResponse, type NextRequest } from 'next/server';
-import { prisma } from '@/lib/db';
 import { getCurrentSession } from '@/lib/auth';
 import {
   buildEventsFilter,
@@ -16,6 +15,7 @@ import {
   type EventsSearchParams,
 } from '@/lib/event-filter';
 import { formatJstDateTimeSec, JST_TIMEZONE } from '@/lib/format';
+import { combinedFindManyDetail } from '@/lib/event-source';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -89,38 +89,10 @@ export async function GET(req: NextRequest) {
 
   const filter = buildEventsFilter(sp);
 
-  // 集計と全件取得を並列で
-  const [totalEvents, imageAgg, rows] = await Promise.all([
-    prisma.event.count({ where: filter.where }),
-    prisma.event.aggregate({
-      where: filter.where,
-      _sum: { imageCount: true },
-    }),
-    prisma.event.findMany({
-      where: filter.where,
-      orderBy: { createdAt: 'desc' },
-      select: {
-        id: true,
-        createdAt: true,
-        abSystemUserId: true,
-        abSystemUserName: true,
-        endpoint: true,
-        genre: true,
-        subGenre: true,
-        appealType: true,
-        appealText: true,
-        imageCount: true,
-        downloaded: true,
-        horizontallyExpanded: true,
-        aiEdited: true,
-        regeneratedCount: true,
-        hitScore: true,
-        rating: true,
-      },
-    }),
-  ]);
-
-  const totalImages = imageAgg._sum.imageCount ?? 0;
+  // Event ∪ ArchivedEvent から全件取得 → 集計
+  const rows = await combinedFindManyDetail(filter.where);
+  const totalEvents = rows.length;
+  const totalImages = rows.reduce((s, r) => s + r.imageCount, 0);
   const rangeLabel = describeRangeLabel(filter);
   const others = describeOtherConditions(sp);
 
@@ -144,7 +116,7 @@ export async function GET(req: NextRequest) {
   for (const r of rows) {
     lines.push(
       csvRow([
-        r.id,
+        r.displayId,
         formatJstDateTimeSec(r.createdAt),
         r.abSystemUserName ?? '',
         r.abSystemUserId,

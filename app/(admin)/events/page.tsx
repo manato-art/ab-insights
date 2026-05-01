@@ -1,10 +1,17 @@
 // 工程履歴一覧ページ (Server Component)
 // - URL query param でフィルタ / ページネーション
-// - 行クリックで詳細 Dialog(client component で制御)
+// - Event (現役) と ArchivedEvent (過去月) を統合表示
+// - 行は lite 表示。 画像本体は /events/{source}/{id}/images で別途 (signed URL ダウンロード)
 import Link from 'next/link';
-import { prisma } from '@/lib/db';
-import { buildEventsFilter, type EventsSearchParams } from '@/lib/event-filter';
+import {
+  buildEventsFilter,
+  type EventsSearchParams,
+} from '@/lib/event-filter';
 import { formatJstShortDateTime } from '@/lib/format';
+import {
+  combinedCount,
+  combinedFindManyLite,
+} from '@/lib/event-source';
 import {
   Table,
   TableBody,
@@ -16,11 +23,8 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { FilterBar } from './filter-bar';
-import {
-  EventRow,
-  type EventDetailPayload,
-} from './event-detail';
 
+export const dynamic = 'force-dynamic';
 export const metadata = { title: '工程履歴一覧 — ab-insights' };
 
 const DEFAULT_PER_PAGE = 50;
@@ -41,94 +45,16 @@ export default async function EventsPage({
     MAX_PER_PAGE,
   );
 
-  // --- where 構築 (共通ヘルパ) ---
   const { where, period, range } = buildEventsFilter(sp);
 
-  // --- 並列で count + data + 詳細(images + aiEdits) を一回取得 ---
   const [total, rows] = await Promise.all([
-    prisma.event.count({ where }),
-    prisma.event.findMany({
+    combinedCount(where),
+    combinedFindManyLite({
       where,
-      orderBy: { createdAt: 'desc' },
       skip: (page - 1) * perPage,
       take: perPage,
-      include: {
-        images: { orderBy: { imageIndex: 'asc' } },
-        aiEdits: { orderBy: { createdAt: 'asc' } },
-      },
     }),
   ]);
-
-  // --- 行データを client 向け payload に変換 ---
-  // - Buffer → base64 dataURL
-  // - Date → ISO string
-  const events: EventDetailPayload[] = rows.map((r) => ({
-    id: r.id,
-    abSystemUserId: r.abSystemUserId,
-    abSystemUserName: r.abSystemUserName,
-    endpoint: r.endpoint,
-    model: r.model,
-    createdAt: r.createdAt.toISOString(),
-    genre: r.genre,
-    subGenre: r.subGenre,
-    gender: r.gender,
-    ageGroup: r.ageGroup,
-    platform: r.platform,
-    appealType: r.appealType,
-    appealText: r.appealText,
-    additionalNote: r.additionalNote,
-    styleAxesJson: r.styleAxesJson,
-    urlAnalysisSummary: r.urlAnalysisSummary,
-    promptFull: r.promptFull,
-    promptHash: r.promptHash,
-    imageCount: r.imageCount,
-    downloaded: r.downloaded,
-    horizontallyExpanded: r.horizontallyExpanded,
-    aiEdited: r.aiEdited,
-    regeneratedCount: r.regeneratedCount,
-    hitScore: r.hitScore,
-    images: r.images.map((img) => ({
-      id: img.id,
-      imageIndex: img.imageIndex,
-      dataUrl: img.thumbnail
-        ? 'data:image/webp;base64,' +
-          Buffer.from(img.thumbnail).toString('base64')
-        : null,
-      downloaded: img.downloaded,
-      aiEdited: img.aiEdited,
-    })),
-    aiEdits: r.aiEdits.map((e) => ({
-      id: e.id,
-      kind: e.kind,
-      instruction: e.instruction,
-      createdAt: e.createdAt.toISOString(),
-    })),
-    // ① 信号粒度・評価
-    decisionTimeMs: r.decisionTimeMs,
-    regenerationReason: r.regenerationReason,
-    rating: r.rating,
-    ratingComment: r.ratingComment,
-    tagsJson: r.tagsJson,
-    // ② 文脈入力
-    campaignGoal: r.campaignGoal,
-    targetInterestsJson: r.targetInterestsJson,
-    targetRegion: r.targetRegion,
-    targetIncomeRange: r.targetIncomeRange,
-    budgetRange: r.budgetRange,
-    targetCpa: r.targetCpa,
-    landingPageUrl: r.landingPageUrl,
-    cvPointType: r.cvPointType,
-    // ⑤ 暗黙シグナル
-    sessionDurationMs: r.sessionDurationMs,
-    totalHoverMs: r.totalHoverMs,
-    zoomCount: r.zoomCount,
-    tabSwitchCount: r.tabSwitchCount,
-    comparisonViewMs: r.comparisonViewMs,
-    rightClickSaveCount: r.rightClickSaveCount,
-    // ⑥ ネガティブ学習
-    discardedAfterEdit: r.discardedAfterEdit,
-    regenerationDiffJson: r.regenerationDiffJson,
-  }));
 
   const totalPages = Math.max(1, Math.ceil(total / perPage));
 
@@ -149,7 +75,7 @@ export default async function EventsPage({
         <div>
           <h1 className="text-2xl font-semibold">工程履歴一覧</h1>
           <p className="text-sm text-muted-foreground mt-1">
-            ab-system からの画像生成記録を閲覧します。
+            ab-system からの画像生成記録を閲覧します。 当月分はリアルタイム、 過去月はアーカイブから自動表示。
           </p>
         </div>
         <div className="flex gap-2 shrink-0">
@@ -212,20 +138,26 @@ export default async function EventsPage({
               <TableHead className="text-right">枚数</TableHead>
               <TableHead>シグナル</TableHead>
               <TableHead className="text-right">刺さり度</TableHead>
+              <TableHead>画像</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            {events.length === 0 ? (
+            {rows.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={8} className="py-10 text-center text-muted-foreground">
-                  条件に合致する生成画像がありません
+                <TableCell colSpan={9} className="py-10 text-center text-muted-foreground">
+                  条件に合致する工程がありません
                 </TableCell>
               </TableRow>
             ) : (
-              events.map((ev) => (
-                <EventRow key={ev.id} event={ev}>
+              rows.map((ev) => (
+                <TableRow key={`${ev.source}-${ev.id}`}>
                   <TableCell className="font-mono text-xs">
-                    {formatShort(ev.createdAt)}
+                    {formatJstShortDateTime(ev.createdAt)}
+                    {ev.source === 'archived' && (
+                      <Badge variant="outline" className="ml-1 text-[9px]">
+                        アーカイブ
+                      </Badge>
+                    )}
                   </TableCell>
                   <TableCell className="max-w-[180px]">
                     <span
@@ -240,9 +172,7 @@ export default async function EventsPage({
                     </span>
                   </TableCell>
                   <TableCell>
-                    <Badge variant="secondary">
-                      {endpointLabel(ev.endpoint)}
-                    </Badge>
+                    <Badge variant="secondary">{endpointLabel(ev.endpoint)}</Badge>
                   </TableCell>
                   <TableCell>
                     {ev.genre ?? <span className="text-muted-foreground">—</span>}
@@ -288,7 +218,18 @@ export default async function EventsPage({
                   <TableCell className="text-right font-mono">
                     {ev.hitScore !== null ? ev.hitScore.toFixed(2) : '—'}
                   </TableCell>
-                </EventRow>
+                  <TableCell>
+                    <Button variant="outline" size="xs" asChild>
+                      <Link
+                        href={`/events/${ev.source}/${ev.id}/images`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >
+                        画像
+                      </Link>
+                    </Button>
+                  </TableCell>
+                </TableRow>
               ))
             )}
           </TableBody>
@@ -311,7 +252,6 @@ function Pagination({
 }) {
   if (totalPages <= 1) return null;
 
-  // 既存 sp を保持しつつ page だけ差し替える helper
   const makeHref = (p: number) => {
     const params = new URLSearchParams();
     for (const [k, v] of Object.entries(sp)) {
@@ -351,23 +291,16 @@ function Pagination({
   );
 }
 
-// ------------------------------------------------------------
-// utils
-// ------------------------------------------------------------
 function clamp(n: number, min: number, max: number) {
   return Math.min(Math.max(n, min), max);
 }
 
 function endpointLabel(endpoint: string): string {
   const m: Record<string, string> = {
-    'generate-images': '画像生成',
+    'generate-images': '新規生成',
     'generate-similar-one': '横展開',
     'improve-images': '改善',
-    'edit-region': 'AI編集',
+    'edit-region': 'AI部分修正',
   };
   return m[endpoint] ?? endpoint;
-}
-
-function formatShort(iso: string) {
-  return formatJstShortDateTime(iso);
 }

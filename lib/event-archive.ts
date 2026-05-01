@@ -90,6 +90,30 @@ export async function toWebpQ95(input: Buffer): Promise<Buffer> {
   return sharp(input).webp({ quality: 95, effort: 4 }).toBuffer();
 }
 
+/**
+ * Storage key に対する一時的な signed URL を発行する。
+ * 期限 (秒) はデフォルト 1 時間。 admin 画面でダウンロードボタンに使う想定。
+ */
+export async function createSignedDownloadUrl(
+  storageKey: string,
+  expiresInSec = 3600,
+): Promise<string | null> {
+  if (!isSupabaseEnabled()) return null;
+  const sb = getSupabase();
+  if (!sb) return null;
+  const { data, error } = await sb.storage
+    .from(SUPABASE_BUCKET)
+    .createSignedUrl(storageKey, expiresInSec);
+  if (error) {
+    console.warn(
+      `[event-archive] signed URL 発行失敗 key=${storageKey}:`,
+      error.message,
+    );
+    return null;
+  }
+  return data?.signedUrl ?? null;
+}
+
 export type UploadOneResult = {
   imageIndex: number;
   storageKey: string | null;

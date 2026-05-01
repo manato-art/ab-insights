@@ -215,6 +215,123 @@ model GenrePrompt {
   @@index([genre, enabled, priority])
 }
 
+// ===========================================
+// アーカイブ (前月以前のデータ)
+// 月次 cron が Event → ArchivedEvent に移送する。
+// 画像本体 (full) は引き続き Supabase Storage 上にあり、 fullStorageKey で参照する。
+// ===========================================
+
+/// アーカイブされた工程 (Event と同列構成 + 元 id / アーカイブ日時)
+model ArchivedEvent {
+  id Int @id @default(autoincrement())
+  /// Neon 上の元 Event.id (移送前の id)
+  originalEventId Int @unique
+  /// Neon から削除して Supabase アーカイブに移した日時
+  archivedAt DateTime @default(now())
+
+  abSystemUserId String
+  abSystemUserName String?
+  endpoint  String
+  model     String?
+  createdAt DateTime
+
+  // 入力コンテキスト
+  genre              String?
+  subGenre           String?
+  gender             String?
+  ageGroup           String?
+  platform           String?
+  appealType         String?
+  appealText         String?
+  appealOriginalText String?
+  appealSelectedIndex Int?
+  additionalNote     String?
+  aiEditInstructionsJson String?
+  styleAxesJson      String?
+  urlAnalysisSummary String?
+  promptFull         String?
+  promptHash         String?
+
+  // 行動シグナル
+  imageCount           Int     @default(0)
+  downloaded           Boolean @default(false)
+  horizontallyExpanded Boolean @default(false)
+  aiEdited             Boolean @default(false)
+  regeneratedCount     Int     @default(0)
+  hitScore             Float?
+
+  // ① 信号粒度・評価
+  decisionTimeMs     Int?
+  regenerationReason String?
+  rating             Int?
+  ratingComment      String?
+  tagsJson           String?
+
+  // ② 文脈入力
+  campaignGoal        String?
+  targetInterestsJson String?
+  targetRegion        String?
+  targetIncomeRange   String?
+  budgetRange         String?
+  targetCpa           Float?
+  landingPageUrl      String?
+  cvPointType         String?
+
+  // ⑤ 暗黙シグナル
+  sessionDurationMs    Int?
+  totalHoverMs         Int?
+  zoomCount            Int?
+  tabSwitchCount       Int?
+  comparisonViewMs     Int?
+  rightClickSaveCount  Int?
+
+  // ⑥ ネガティブ学習
+  discardedAfterEdit   Boolean @default(false)
+  regenerationDiffJson String?
+
+  images  ArchivedEventImage[]
+  aiEdits ArchivedEventAiEdit[]
+
+  @@index([genre, createdAt])
+  @@index([abSystemUserId, createdAt])
+  @@index([createdAt])
+}
+
+model ArchivedEventImage {
+  id              Int     @id @default(autoincrement())
+  event           ArchivedEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  eventId         Int
+  /// 元 EventImage.id
+  originalImageId Int
+  imageIndex      Int
+  thumbnail       Bytes?
+  fullHash        String?
+  fullStorageKey  String?
+  downloaded      Boolean @default(false)
+  aiEdited        Boolean @default(false)
+  downloadedAt    DateTime?
+  downloadRank    Int?
+  hoverMs         Int?
+  viewCount       Int?
+
+  @@index([eventId])
+}
+
+model ArchivedEventAiEdit {
+  id              Int      @id @default(autoincrement())
+  event           ArchivedEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  eventId         Int
+  /// 元 EventAiEdit.id
+  originalEditId  Int
+  kind            String
+  instruction     String
+  createdAt       DateTime
+  discarded       Boolean  @default(false)
+
+  @@index([eventId])
+  @@index([kind])
+}
+
 /// ジャンル別の集計済みインサイト(定期バッチで更新)
 model GenreInsight {
   id                 Int      @id @default(autoincrement())

@@ -35,6 +35,17 @@ import {
   type UserRow,
 } from './dashboard-types';
 import {
+  combinedCount,
+  combinedCountAndImages,
+  combinedGenreGroups,
+  combinedEndpointGroups,
+  combinedUserGroups,
+  combinedAvgHit,
+  combinedLatestUserName,
+  combinedFindManyLite,
+  combinedFindForDailyBreakdown,
+} from '@/lib/event-source';
+import {
   parsePeriod,
   parseDateRange,
   resolveRangeFilter,
@@ -112,132 +123,77 @@ function formatJstDayLabel(dayKey: string): string {
 async function getDashboardData(rangeFilter: RangeFilter) {
   const where = rangeFilter ? { createdAt: rangeFilter } : {};
 
+  // 全期間累計 (Event ∪ ArchivedEvent) と 範囲内集計 を並列に
   const [
-    totalEvents,
-    totalImagesAgg,
-    rangeEvents,
-    rangeImagesAgg,
+    totalAgg,
+    rangeAgg,
     downloadedTotal,
     genreGroups,
     endpointGroups,
     userGroups,
     learningEnabled,
   ] = await Promise.all([
-    prisma.event.count(),
-    prisma.event.aggregate({ _sum: { imageCount: true } }),
-    prisma.event.count({ where }),
-    prisma.event.aggregate({ where, _sum: { imageCount: true } }),
-    prisma.event.count({ where: { ...where, downloaded: true } }),
-    prisma.event.groupBy({
-      by: ['genre'],
-      where,
-      _count: { _all: true },
-      _sum: { imageCount: true },
-      orderBy: { _count: { id: 'desc' } },
-    }),
-    prisma.event.groupBy({
-      by: ['endpoint'],
-      where,
-      _count: { _all: true },
-      _sum: { imageCount: true },
-      orderBy: { _count: { id: 'desc' } },
-    }),
-    prisma.event.groupBy({
-      by: ['abSystemUserId'],
-      where,
-      _count: { _all: true },
-      _sum: { imageCount: true },
-      orderBy: { _count: { id: 'desc' } },
-    }),
+    combinedCountAndImages({}),
+    combinedCountAndImages(where),
+    combinedCount({ ...where, downloaded: true }),
+    combinedGenreGroups(where),
+    combinedEndpointGroups(where),
+    combinedUserGroups(where),
     getLearningEnabled(),
   ]);
 
-  const totalImages = totalImagesAgg._sum.imageCount ?? 0;
-  const rangeImages = rangeImagesAgg._sum.imageCount ?? 0;
+  const totalEvents = totalAgg.count;
+  const totalImages = totalAgg.images;
+  const rangeEvents = rangeAgg.count;
+  const rangeImages = rangeAgg.images;
 
   // ジャンル別の詳細(downloaded/expanded/edited/avgHit)は個別クエリで
   const genreRows: GenreRow[] = await Promise.all(
     genreGroups.map(async (g) => {
       const w = { ...where, genre: g.genre };
       const [downloaded, expanded, edited, avg] = await Promise.all([
-        prisma.event.count({ where: { ...w, downloaded: true } }),
-        prisma.event.count({ where: { ...w, horizontallyExpanded: true } }),
-        prisma.event.count({ where: { ...w, aiEdited: true } }),
-        prisma.event.aggregate({
-          where: w,
-          _avg: { hitScore: true },
-        }),
+        combinedCount({ ...w, downloaded: true }),
+        combinedCount({ ...w, horizontallyExpanded: true }),
+        combinedCount({ ...w, aiEdited: true }),
+        combinedAvgHit(w),
       ]);
       return {
         genre: g.genre ?? '',
-        total: g._count._all,
-        images: g._sum.imageCount ?? 0,
+        total: g.total,
+        images: g.images,
         downloaded,
         expanded,
         edited,
-        avgHitScore: avg._avg.hitScore,
+        avgHitScore: avg,
       };
     }),
   );
 
   const endpointRows: EndpointRow[] = endpointGroups.map((g) => ({
     endpoint: g.endpoint,
-    total: g._count._all,
-    images: g._sum.imageCount ?? 0,
+    total: g.total,
+    images: g.images,
   }));
 
   // ユーザー別: 各ユーザーの エンドポイント別内訳 + 直近 10 件 + 最新の name を個別クエリで取得
-  // 3 人運用想定なのでユーザー数は少ない。
-  // 同一 abSystemUserId でも name が null/有 で混在しているケースがあるため、
-  // groupBy では abSystemUserId だけで集約し、name は最新の非 null 値を別取得する。
   const userRows: UserRow[] = await Promise.all(
     userGroups.map(async (u) => {
       const w = { ...where, abSystemUserId: u.abSystemUserId };
-      const [downloadedCount, byEndpoint, recents, latestNamed] = await Promise.all([
-        prisma.event.count({ where: { ...w, downloaded: true } }),
-        prisma.event.groupBy({
-          by: ['endpoint'],
-          where: w,
-          _count: { _all: true },
-          _sum: { imageCount: true },
-          orderBy: { _count: { id: 'desc' } },
-        }),
-        prisma.event.findMany({
-          where: w,
-          orderBy: { createdAt: 'desc' },
-          take: 10,
-          select: {
-            id: true,
-            endpoint: true,
-            genre: true,
-            imageCount: true,
-            downloaded: true,
-            createdAt: true,
-          },
-        }),
-        // 最新の non-null name を引く (期間外も含めた歴史全体から)
-        prisma.event.findFirst({
-          where: {
-            abSystemUserId: u.abSystemUserId,
-            abSystemUserName: { not: null },
-          },
-          orderBy: { createdAt: 'desc' },
-          select: { abSystemUserName: true },
-        }),
+      const [downloadedCount, byEndpoint, recentLite, latestName] = await Promise.all([
+        combinedCount({ ...w, downloaded: true }),
+        combinedEndpointGroups(w),
+        combinedFindManyLite({ where: w, skip: 0, take: 10 }),
+        combinedLatestUserName(u.abSystemUserId),
       ]);
       return {
         abSystemUserId: u.abSystemUserId,
-        abSystemUserName: latestNamed?.abSystemUserName ?? null,
-        total: u._count._all,
-        images: u._sum.imageCount ?? 0,
+        abSystemUserName: latestName,
+        total: u.total,
+        images: u.images,
         downloaded: downloadedCount,
-        endpointBreakdown: byEndpoint.map((e) => ({
-          endpoint: e.endpoint,
-          total: e._count._all,
-          images: e._sum.imageCount ?? 0,
-        })),
-        recentEvents: recents.map((r) => ({
-          id: r.id,
+        endpointBreakdown: byEndpoint,
+        recentEvents: recentLite.map((r) => ({
+          id: r.displayId,
           endpoint: r.endpoint,
           genre: r.genre,
           imageCount: r.imageCount,
@@ -277,16 +233,7 @@ async function getDailyBreakdown(
     where = { createdAt: { gte: since } };
   }
 
-  const events = await prisma.event.findMany({
-    where,
-    select: {
-      createdAt: true,
-      imageCount: true,
-      downloaded: true,
-      horizontallyExpanded: true,
-      aiEdited: true,
-    },
-  });
+  const events = await combinedFindForDailyBreakdown(where);
 
   const map = new Map<string, DailyRow>();
   for (const e of events) {

@@ -5,7 +5,6 @@
 // 印刷時は @media print で余分な UI を消し、 ヘッダ/タイトル/総数を 1 番上に固定する。
 
 import Link from 'next/link';
-import { prisma } from '@/lib/db';
 import {
   buildEventsFilter,
   describeOtherConditions,
@@ -13,6 +12,7 @@ import {
   type EventsSearchParams,
 } from '@/lib/event-filter';
 import { formatJstDateTimeSec, formatJstShortDateTime } from '@/lib/format';
+import { combinedFindManyDetail } from '@/lib/event-source';
 import PrintTrigger from './print-trigger';
 
 export const dynamic = 'force-dynamic';
@@ -33,34 +33,9 @@ export default async function PrintPage({
   const sp = await searchParams;
   const filter = buildEventsFilter(sp);
 
-  const [totalEvents, imageAgg, rows] = await Promise.all([
-    prisma.event.count({ where: filter.where }),
-    prisma.event.aggregate({
-      where: filter.where,
-      _sum: { imageCount: true },
-    }),
-    prisma.event.findMany({
-      where: filter.where,
-      orderBy: { createdAt: 'desc' },
-      select: {
-        id: true,
-        createdAt: true,
-        abSystemUserId: true,
-        abSystemUserName: true,
-        endpoint: true,
-        genre: true,
-        appealType: true,
-        appealText: true,
-        imageCount: true,
-        downloaded: true,
-        horizontallyExpanded: true,
-        aiEdited: true,
-        hitScore: true,
-      },
-    }),
-  ]);
-
-  const totalImages = imageAgg._sum.imageCount ?? 0;
+  const rows = await combinedFindManyDetail(filter.where);
+  const totalEvents = rows.length;
+  const totalImages = rows.reduce((s, r) => s + r.imageCount, 0);
   const rangeLabel = describeRangeLabel(filter);
   const others = describeOtherConditions(sp);
 
@@ -138,8 +113,8 @@ export default async function PrintPage({
           </thead>
           <tbody>
             {rows.map((r) => (
-              <tr key={r.id} className="border-b border-gray-300">
-                <Td className="font-mono text-gray-500">#{r.id}</Td>
+              <tr key={`${r.source}-${r.id}`} className="border-b border-gray-300">
+                <Td className="font-mono text-gray-500">#{r.displayId}</Td>
                 <Td className="font-mono whitespace-nowrap">
                   {formatJstShortDateTime(r.createdAt)}
                 </Td>
