@@ -100,8 +100,8 @@
   --sidebar-foreground: var(--ink);
   --sidebar-primary: var(--brand-orange);
   --sidebar-primary-foreground: oklch(0.99 0 0);
-  --sidebar-accent: oklch(0.94 0.04 60);
-  --sidebar-accent-foreground: oklch(0.32 0.1 50);
+  --sidebar-accent: var(--accent);
+  --sidebar-accent-foreground: var(--accent-foreground);
   --sidebar-border: var(--hairline);
   --sidebar-ring: var(--brand-orange);
 }
