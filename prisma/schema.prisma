@@ -50,6 +50,21 @@ model Setting {
   updatedAt DateTime @updatedAt
 }
 
+/// ab-insights 側で持つユーザープロフィール (ab-system には一切戻さない)。
+/// abSystemUserId をキーに、表示名上書き / 月画像上限 / メモ を管理する。
+model UserProfile {
+  /// ab-system 側のユーザー ID (Event.abSystemUserId と同じ opaque 文字列)
+  abSystemUserId    String   @id
+  /// ab-insights 側で付ける別名 (null なら Event.abSystemUserName を使う)
+  displayName       String?
+  /// この人の月画像上限 (null なら Setting.default_monthly_image_quota にフォールバック)
+  monthlyImageQuota Int?
+  /// 管理者メモ
+  note              String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+}
+
 // ===========================================
 // 学習データ
 // ===========================================
