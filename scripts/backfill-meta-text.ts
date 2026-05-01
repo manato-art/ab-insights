@@ -142,21 +142,38 @@ function buildMetaText(ev: EventLike): string {
   ].join('\n');
 }
 
-function buildMetaKey(ev: { abSystemUserId: string; abSystemUserName: string | null; createdAt: Date; eventId: number }): string {
+function buildEventFolder(ev: { abSystemUserId: string; abSystemUserName: string | null; createdAt: Date; eventId: number }): { folder: string; eventFolder: string } {
   const userPart = sanitizeForFilename(ev.abSystemUserName ?? ev.abSystemUserId, 40);
   const datePart = jstFileStamp(ev.createdAt);
   const folder = jstYearMonthFolder(ev.createdAt);
-  return `${folder}/e${ev.eventId}_${userPart}_${datePart}/meta.txt`;
+  const eventFolder = `e${ev.eventId}_${userPart}_${datePart}`;
+  return { folder, eventFolder };
+}
+
+function buildMetaKey(ev: { abSystemUserId: string; abSystemUserName: string | null; createdAt: Date; eventId: number }): string {
+  const { folder, eventFolder } = buildEventFolder(ev);
+  return `${folder}/${eventFolder}/${eventFolder}.txt`;
+}
+
+function buildOldMetaKey(ev: { abSystemUserId: string; abSystemUserName: string | null; createdAt: Date; eventId: number }): string {
+  const { folder, eventFolder } = buildEventFolder(ev);
+  return `${folder}/${eventFolder}/meta.txt`;
 }
 
 async function uploadMeta(ev: EventLike): Promise<boolean> {
   const text = buildMetaText(ev);
-  const key = buildMetaKey({
+  const opts = {
     abSystemUserId: ev.abSystemUserId,
     abSystemUserName: ev.abSystemUserName,
     createdAt: ev.createdAt,
     eventId: ev.eventId,
-  });
+  };
+  const key = buildMetaKey(opts);
+  const oldKey = buildOldMetaKey(opts);
+
+  // 旧 meta.txt があれば削除 (前回 backfill の残骸)
+  await sb.storage.from(BUCKET).remove([oldKey]).catch(() => {});
+
   const buf = Buffer.from(text, 'utf-8');
   const { error } = await sb.storage.from(BUCKET).upload(key, buf, {
     contentType: 'text/plain',

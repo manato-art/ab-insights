@@ -227,7 +227,9 @@ export function buildMetaText(ev: {
 }
 
 /**
- * 工程フォルダ内の meta.txt のキーを返す
+ * 工程フォルダ内のメタテキストファイルのキーを返す。
+ * ファイル名は工程フォルダ名と同じパターン (= 一目でどの工程か分かる)
+ *   2026-05/e298_kaneya@cypherone.co.jp_20260501_1433/e298_kaneya@cypherone.co.jp_20260501_1433.txt
  */
 export function buildMetaKey(opts: {
   abSystemUserId: string;
@@ -241,7 +243,8 @@ export function buildMetaKey(opts: {
   );
   const datePart = jstFileStamp(opts.createdAt);
   const folder = jstYearMonthFolder(opts.createdAt);
-  return `${folder}/e${opts.eventId}_${userPart}_${datePart}/meta.txt`;
+  const eventFolder = `e${opts.eventId}_${userPart}_${datePart}`;
+  return `${folder}/${eventFolder}/${eventFolder}.txt`;
 }
 
 /**
