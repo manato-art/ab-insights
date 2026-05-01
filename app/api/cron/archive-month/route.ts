@@ -18,6 +18,8 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { prisma } from '@/lib/db';
 import { getCurrentSession } from '@/lib/auth';
+import { getSupabase, SUPABASE_BUCKET, isSupabaseEnabled } from '@/lib/supabase';
+import { buildStorageKey } from '@/lib/event-archive';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -212,6 +214,61 @@ async function runArchive(range: { gte: Date; lt: Date; label: string }) {
     if (events.length < BATCH) break;
   }
 
+  // ===== 画像 backfill =====
+  // ArchivedEventImage で fullStorageKey が未設定 (= Storage 未保存) のものを補完。
+  // webhook 受信時に Storage upload が失敗 / 未設定だった場合の安全網。
+  // サムネ (64x64) しか持っていない画像でも、 とりあえず Storage に置いて Dashboard 上で
+  // 「この工程で何枚あったか」 が確認できる状態にする。
+  let backfillUploaded = 0;
+  let backfillFailed = 0;
+  let backfillSkippedNoThumb = 0;
+  if (isSupabaseEnabled()) {
+    const sb = getSupabase();
+    if (sb) {
+      const targets = await prisma.archivedEventImage.findMany({
+        where: {
+          fullStorageKey: null,
+          event: { createdAt: { gte: range.gte, lt: range.lt } },
+        },
+        include: { event: true },
+      });
+      for (const img of targets) {
+        if (!img.thumbnail) {
+          backfillSkippedNoThumb++;
+          continue;
+        }
+        const ev = img.event;
+        const storageKey = buildStorageKey({
+          abSystemUserId: ev.abSystemUserId,
+          abSystemUserName: ev.abSystemUserName,
+          createdAt: ev.createdAt,
+          imageIndex: img.imageIndex,
+          eventId: ev.originalEventId,
+        });
+        const buf = Buffer.from(img.thumbnail);
+        const { error: upErr } = await sb.storage
+          .from(SUPABASE_BUCKET)
+          .upload(storageKey, buf, {
+            contentType: 'image/webp',
+            upsert: true,
+          });
+        if (upErr) {
+          console.warn(
+            `[cron archive-month] backfill upload 失敗 image=${img.id}:`,
+            upErr.message,
+          );
+          backfillFailed++;
+          continue;
+        }
+        await prisma.archivedEventImage.update({
+          where: { id: img.id },
+          data: { fullStorageKey: storageKey },
+        });
+        backfillUploaded++;
+      }
+    }
+  }
+
   const elapsedMs = Date.now() - startedAt;
   const summary = {
     monthLabel: range.label,
@@ -221,7 +278,10 @@ async function runArchive(range: { gte: Date; lt: Date; label: string }) {
     archived: archivedCount,
     skippedExisting,
     errorCount: errors.length,
-    errors: errors.slice(0, 10), // ログ過大化防止
+    errors: errors.slice(0, 10),
+    backfillUploaded,
+    backfillFailed,
+    backfillSkippedNoThumb,
     elapsedMs,
   };
   console.log('[cron archive-month] done', summary);
