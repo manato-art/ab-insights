@@ -16,6 +16,9 @@ import { createEventSchema, formatZodError } from '@/lib/validators';
 import {
   buildStorageKey,
   uploadOneImageToArchive,
+  buildMetaKey,
+  buildMetaText,
+  uploadMetaTextFile,
 } from '@/lib/event-archive';
 import { isSupabaseEnabled } from '@/lib/supabase';
 import { formatJstDateTimeSec } from '@/lib/format';
@@ -207,7 +210,56 @@ export async function POST(req: NextRequest) {
       return { eventId: event.id, archivePlan: archivePlanLocal };
     });
 
-    // ===== Supabase Storage に並列アップロード =====
+    // ===== Supabase Storage に meta.txt を並列アップロード =====
+    // 画像が 1 枚でも archive 対象なら、 同じフォルダに meta.txt も作る。
+    if (isSupabaseEnabled() && archivePlan.length > 0) {
+      const metaKey = buildMetaKey({
+        abSystemUserId: body.abSystemUserId,
+        abSystemUserName: body.abSystemUserName ?? null,
+        createdAt: new Date(),
+        eventId,
+      });
+      // 直前に作った Event を fetch して全フィールドでテキスト生成
+      const eventForMeta = await prisma.event.findUnique({
+        where: { id: eventId },
+      });
+      if (eventForMeta) {
+        const text = buildMetaText({
+          id: eventForMeta.id,
+          createdAt: eventForMeta.createdAt,
+          abSystemUserId: eventForMeta.abSystemUserId,
+          abSystemUserName: eventForMeta.abSystemUserName,
+          endpoint: eventForMeta.endpoint,
+          model: eventForMeta.model,
+          genre: eventForMeta.genre,
+          subGenre: eventForMeta.subGenre,
+          gender: eventForMeta.gender,
+          ageGroup: eventForMeta.ageGroup,
+          platform: eventForMeta.platform,
+          appealType: eventForMeta.appealType,
+          appealText: eventForMeta.appealText,
+          additionalNote: eventForMeta.additionalNote,
+          campaignGoal: eventForMeta.campaignGoal,
+          cvPointType: eventForMeta.cvPointType,
+          landingPageUrl: eventForMeta.landingPageUrl,
+          imageCount: eventForMeta.imageCount,
+          downloaded: eventForMeta.downloaded,
+          horizontallyExpanded: eventForMeta.horizontallyExpanded,
+          aiEdited: eventForMeta.aiEdited,
+          hitScore: eventForMeta.hitScore,
+          rating: eventForMeta.rating,
+        });
+        const metaResult = await uploadMetaTextFile({ storageKey: metaKey, text });
+        if (!metaResult.ok) {
+          console.warn(
+            `[POST /api/events] meta.txt upload 失敗 eventId=${eventId}:`,
+            metaResult.error,
+          );
+        }
+      }
+    }
+
+    // ===== Supabase Storage に画像本体を並列アップロード =====
     // ab-system は webhook を fire-and-forget で送るため、 ここで多少時間がかかっても
     // ユーザー応答時間には影響しない。 同期的に upload して結果を DB に反映する。
     if (archivePlan.length > 0) {

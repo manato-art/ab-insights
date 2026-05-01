@@ -125,6 +125,151 @@ export type UploadOneResult = {
 };
 
 /**
+ * 工程の全情報を読みやすいテキストにフォーマット。 meta.txt として Storage に置く。
+ * Supabase Dashboard でクリック → プレビューで読める。
+ */
+export function buildMetaText(ev: {
+  originalEventId?: number | null; // ArchivedEvent の場合
+  id?: number; // Event の場合
+  createdAt: Date;
+  abSystemUserId: string;
+  abSystemUserName: string | null;
+  endpoint: string;
+  model: string | null;
+  genre: string | null;
+  subGenre: string | null;
+  gender: string | null;
+  ageGroup: string | null;
+  platform: string | null;
+  appealType: string | null;
+  appealText: string | null;
+  additionalNote: string | null;
+  campaignGoal: string | null;
+  cvPointType: string | null;
+  landingPageUrl: string | null;
+  imageCount: number;
+  downloaded: boolean;
+  horizontallyExpanded: boolean;
+  aiEdited: boolean;
+  hitScore: number | null;
+  rating: number | null;
+}): string {
+  const ENDPOINT_LABEL: Record<string, string> = {
+    'generate-images': '新規生成',
+    'generate-similar-one': '横展開',
+    'improve-images': '改善',
+    'edit-region': 'AI部分修正',
+  };
+  const CAMPAIGN_GOAL_LABEL: Record<string, string> = {
+    cv: 'CV (購入/申込)',
+    awareness: '認知拡大',
+    lead: 'リード獲得',
+    retargeting: 'リターゲティング',
+  };
+  const CV_POINT_LABEL: Record<string, string> = {
+    purchase: '購入',
+    signup: '会員登録',
+    call: '電話',
+    download: '資料 DL',
+    other: 'その他',
+  };
+  const dt = new Intl.DateTimeFormat('ja-JP', {
+    timeZone: JST_TIMEZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  }).format(ev.createdAt);
+
+  const eventId = ev.originalEventId ?? ev.id ?? '?';
+  const dash = (v: string | null | undefined) => v ?? '—';
+
+  return [
+    '═══════════════════════════════════════',
+    '   ab-insights 工程情報',
+    '═══════════════════════════════════════',
+    '',
+    `工程ID        : ${eventId}`,
+    `日時 (JST)    : ${dt}`,
+    `ユーザー名    : ${dash(ev.abSystemUserName)}`,
+    `ユーザーID    : ${ev.abSystemUserId}`,
+    `作業種別      : ${ENDPOINT_LABEL[ev.endpoint] ?? ev.endpoint} (${ev.endpoint})`,
+    `モデル        : ${dash(ev.model)}`,
+    '',
+    '─── ターゲット ──────────────────────',
+    `ジャンル        : ${dash(ev.genre)}`,
+    `サブジャンル    : ${dash(ev.subGenre)}`,
+    `性別            : ${dash(ev.gender)}`,
+    `年齢層          : ${dash(ev.ageGroup)}`,
+    `プラットフォーム: ${dash(ev.platform)}`,
+    '',
+    '─── キャンペーン ────────────────────',
+    `目的          : ${ev.campaignGoal ? CAMPAIGN_GOAL_LABEL[ev.campaignGoal] ?? ev.campaignGoal : '—'}`,
+    `CV ポイント   : ${ev.cvPointType ? CV_POINT_LABEL[ev.cvPointType] ?? ev.cvPointType : '—'}`,
+    `LP URL        : ${dash(ev.landingPageUrl)}`,
+    '',
+    '─── 訴求 ────────────────────────────',
+    `訴求タイプ    : ${dash(ev.appealType)}`,
+    `訴求文        :`,
+    ev.appealText ? ev.appealText : '  —',
+    '',
+    ev.additionalNote ? `追加メモ      :\n${ev.additionalNote}\n` : '',
+    '─── シグナル / 評価 ─────────────────',
+    `画像枚数      : ${ev.imageCount}`,
+    `DL            : ${ev.downloaded ? 'はい' : 'いいえ'}`,
+    `横展開        : ${ev.horizontallyExpanded ? 'はい' : 'いいえ'}`,
+    `AI編集        : ${ev.aiEdited ? 'はい' : 'いいえ'}`,
+    `刺さり度      : ${ev.hitScore !== null ? ev.hitScore.toFixed(2) : '—'}`,
+    `評価 (1-5)    : ${ev.rating ?? '—'}`,
+  ].join('\n');
+}
+
+/**
+ * 工程フォルダ内の meta.txt のキーを返す
+ */
+export function buildMetaKey(opts: {
+  abSystemUserId: string;
+  abSystemUserName: string | null;
+  createdAt: Date;
+  eventId: number;
+}): string {
+  const userPart = sanitizeForFilename(
+    opts.abSystemUserName ?? opts.abSystemUserId,
+    40,
+  );
+  const datePart = jstFileStamp(opts.createdAt);
+  const folder = jstYearMonthFolder(opts.createdAt);
+  return `${folder}/e${opts.eventId}_${userPart}_${datePart}/meta.txt`;
+}
+
+/**
+ * 工程フォルダの meta.txt を upload。
+ */
+export async function uploadMetaTextFile(opts: {
+  storageKey: string;
+  text: string;
+}): Promise<{ ok: true } | { ok: false; error: string }> {
+  if (!isSupabaseEnabled()) return { ok: false, error: 'supabase not configured' };
+  const sb = getSupabase();
+  if (!sb) return { ok: false, error: 'supabase client init failed' };
+  try {
+    const buf = Buffer.from(opts.text, 'utf-8');
+    const { error } = await sb.storage
+      .from(SUPABASE_BUCKET)
+      .upload(opts.storageKey, buf, {
+        contentType: 'text/plain',
+        upsert: true,
+      });
+    if (error) return { ok: false, error: error.message };
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+/**
  * 1 枚アップロード (失敗しても throw せず、エラー文字列を返す)。
  * Supabase 未設定なら storageKey:null で skip。
  *

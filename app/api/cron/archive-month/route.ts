@@ -19,7 +19,12 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { prisma } from '@/lib/db';
 import { getCurrentSession } from '@/lib/auth';
 import { getSupabase, SUPABASE_BUCKET, isSupabaseEnabled } from '@/lib/supabase';
-import { buildStorageKey } from '@/lib/event-archive';
+import {
+  buildStorageKey,
+  buildMetaKey,
+  buildMetaText,
+  uploadMetaTextFile,
+} from '@/lib/event-archive';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -214,14 +219,13 @@ async function runArchive(range: { gte: Date; lt: Date; label: string }) {
     if (events.length < BATCH) break;
   }
 
-  // ===== 画像 backfill =====
+  // ===== 画像 + meta.txt backfill =====
   // ArchivedEventImage で fullStorageKey が未設定 (= Storage 未保存) のものを補完。
-  // webhook 受信時に Storage upload が失敗 / 未設定だった場合の安全網。
-  // サムネ (64x64) しか持っていない画像でも、 とりあえず Storage に置いて Dashboard 上で
-  // 「この工程で何枚あったか」 が確認できる状態にする。
+  // 画像と一緒に同じ工程フォルダに meta.txt (工程の全情報) も作成する。
   let backfillUploaded = 0;
   let backfillFailed = 0;
   let backfillSkippedNoThumb = 0;
+  let backfillMetaUploaded = 0;
   if (isSupabaseEnabled()) {
     const sb = getSupabase();
     if (sb) {
@@ -232,6 +236,8 @@ async function runArchive(range: { gte: Date; lt: Date; label: string }) {
         },
         include: { event: true },
       });
+      // 工程ごとに 1 回だけ meta.txt 書く
+      const metaUploadedSet = new Set<number>();
       for (const img of targets) {
         if (!img.thumbnail) {
           backfillSkippedNoThumb++;
@@ -265,6 +271,46 @@ async function runArchive(range: { gte: Date; lt: Date; label: string }) {
           data: { fullStorageKey: storageKey },
         });
         backfillUploaded++;
+
+        // 同 event の meta.txt は 1 回だけ書く
+        if (!metaUploadedSet.has(ev.id)) {
+          const metaKey = buildMetaKey({
+            abSystemUserId: ev.abSystemUserId,
+            abSystemUserName: ev.abSystemUserName,
+            createdAt: ev.createdAt,
+            eventId: ev.originalEventId,
+          });
+          const text = buildMetaText({
+            originalEventId: ev.originalEventId,
+            createdAt: ev.createdAt,
+            abSystemUserId: ev.abSystemUserId,
+            abSystemUserName: ev.abSystemUserName,
+            endpoint: ev.endpoint,
+            model: ev.model,
+            genre: ev.genre,
+            subGenre: ev.subGenre,
+            gender: ev.gender,
+            ageGroup: ev.ageGroup,
+            platform: ev.platform,
+            appealType: ev.appealType,
+            appealText: ev.appealText,
+            additionalNote: ev.additionalNote,
+            campaignGoal: ev.campaignGoal,
+            cvPointType: ev.cvPointType,
+            landingPageUrl: ev.landingPageUrl,
+            imageCount: ev.imageCount,
+            downloaded: ev.downloaded,
+            horizontallyExpanded: ev.horizontallyExpanded,
+            aiEdited: ev.aiEdited,
+            hitScore: ev.hitScore,
+            rating: ev.rating,
+          });
+          const metaResult = await uploadMetaTextFile({ storageKey: metaKey, text });
+          if (metaResult.ok) {
+            backfillMetaUploaded++;
+            metaUploadedSet.add(ev.id);
+          }
+        }
       }
     }
   }
@@ -282,6 +328,7 @@ async function runArchive(range: { gte: Date; lt: Date; label: string }) {
     backfillUploaded,
     backfillFailed,
     backfillSkippedNoThumb,
+    backfillMetaUploaded,
     elapsedMs,
   };
   console.log('[cron archive-month] done', summary);
