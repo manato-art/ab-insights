@@ -39,6 +39,11 @@ export function endpointLabel(endpoint: string): string {
     'generate-similar-one': '横展開',
     'improve-images': '改善 (AI修正)',
     'edit-region': 'AI 部分修正',
+    'transform-image': '変形',
+    'generate-reference': '参考広告ベース',
+    'stylize-product': 'スタイル変換',
+    'upscale-image': '画質向上',
+    'resize-image': 'リサイズ',
   };
   return m[endpoint] ?? endpoint;
 }

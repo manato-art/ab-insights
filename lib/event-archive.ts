@@ -159,6 +159,11 @@ export function buildMetaText(ev: {
     'generate-similar-one': '横展開',
     'improve-images': '改善',
     'edit-region': 'AI部分修正',
+    'transform-image': '変形',
+    'generate-reference': '参考広告ベース',
+    'stylize-product': 'スタイル変換',
+    'upscale-image': '画質向上',
+    'resize-image': 'リサイズ',
   };
   const CAMPAIGN_GOAL_LABEL: Record<string, string> = {
     cv: 'CV (購入/申込)',

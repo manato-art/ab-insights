@@ -10,10 +10,15 @@ import { Button } from '@/components/ui/button';
 
 const ENDPOINT_OPTIONS = [
   { value: '', label: '全て' },
-  { value: 'generate-images', label: '画像生成' },
+  { value: 'generate-images', label: '新規生成' },
   { value: 'generate-similar-one', label: '横展開' },
   { value: 'improve-images', label: '改善' },
-  { value: 'edit-region', label: 'AI編集' },
+  { value: 'edit-region', label: 'AI部分修正' },
+  { value: 'transform-image', label: '変形' },
+  { value: 'generate-reference', label: '参考広告ベース' },
+  { value: 'stylize-product', label: 'スタイル変換' },
+  { value: 'upscale-image', label: '画質向上' },
+  { value: 'resize-image', label: 'リサイズ' },
 ];
 
 const TRI_OPTIONS = [
