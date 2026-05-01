@@ -156,6 +156,10 @@ model EventImage {
   imageIndex Int // バリエーション番号
   thumbnail  Bytes? // 64x64 WebP 圧縮(~3-5KB)
   fullHash   String? // 元画像の SHA-256 (重複検出)
+  /// Supabase Storage に保存した原寸 WebP 画像のキー
+  /// 例: "manato_20260501_1120_精力剤_0.webp"
+  /// null なら Storage 未保存 (旧データ or upload 失敗)
+  fullStorageKey String?
   downloaded Boolean @default(false)
   aiEdited   Boolean @default(false)
 

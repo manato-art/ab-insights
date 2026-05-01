@@ -10,6 +10,14 @@ export const eventImageSchema = z.object({
   thumbnail: z.string().min(1).optional().nullable(),
   /** 元画像の SHA-256 16 進文字列(重複検出用)。 */
   fullHash: z.string().min(1).optional().nullable(),
+  /**
+   * 原寸画像を base64 エンコードした文字列(data: URL プレフィクスは不可)。
+   * ab-insights は受信後に WebP 圧縮して Supabase Storage に保存する。
+   * 旧 ab-system クライアントは送らない (optional)。
+   */
+  full: z.string().min(1).optional().nullable(),
+  /** full の MIME type (例: "image/png"、 "image/jpeg")。 */
+  fullMimeType: z.string().min(1).optional().nullable(),
 });
 
 /** POST /api/events のリクエスト body */

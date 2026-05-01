@@ -124,6 +124,7 @@ model EventImage {
   imageIndex Int
   thumbnail  Bytes?
   fullHash   String?
+  fullStorageKey String?
   downloaded Boolean @default(false)
   aiEdited   Boolean @default(false)
 

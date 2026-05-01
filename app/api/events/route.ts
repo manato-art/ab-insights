@@ -13,6 +13,11 @@ import { createHash } from 'node:crypto';
 import { prisma } from '@/lib/db';
 import { verifyApiToken } from '@/lib/auth';
 import { createEventSchema, formatZodError } from '@/lib/validators';
+import {
+  buildStorageKey,
+  uploadOneImageToArchive,
+} from '@/lib/event-archive';
+import { isSupabaseEnabled } from '@/lib/supabase';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -111,9 +116,9 @@ export async function POST(req: NextRequest) {
       ? body.imageCount
       : body.images.length;
 
-  // 5. Event + EventImage 作成 (トランザクション)
+  // 5. Event + EventImage 作成 (トランザクション) + 必要なら Supabase Storage upload
   try {
-    const eventId = await prisma.$transaction(async (tx) => {
+    const { eventId, archivePlan } = await prisma.$transaction(async (tx) => {
       const event = await tx.event.create({
         data: {
           abSystemUserId: body.abSystemUserId,
@@ -154,22 +159,93 @@ export async function POST(req: NextRequest) {
         },
       });
 
+      // 画像ごとに Supabase Storage 用のキーを事前計算しておく (full が来ているもののみ)
+      const archivePlanLocal: {
+        imageId: number;
+        imageIndex: number;
+        storageKey: string;
+        fullBase64: string;
+      }[] = [];
+
       if (body.images.length > 0) {
         // SQLite は createMany で Bytes をうまく扱えない環境があるため個別 create
         for (const img of body.images) {
-          await tx.eventImage.create({
+          const willArchive =
+            isSupabaseEnabled() && typeof img.full === 'string' && img.full.length > 0;
+          const storageKey = willArchive
+            ? buildStorageKey({
+                abSystemUserId: body.abSystemUserId,
+                abSystemUserName: body.abSystemUserName ?? null,
+                genre: body.genre ?? null,
+                createdAt: event.createdAt,
+                imageIndex: img.imageIndex,
+                eventId: event.id,
+              })
+            : null;
+
+          const created = await tx.eventImage.create({
             data: {
               eventId: event.id,
               imageIndex: img.imageIndex,
               thumbnail: decodeThumbnail(img.thumbnail),
               fullHash: img.fullHash ?? null,
+              fullStorageKey: storageKey, // 楽観的に DB に書く。 upload 失敗時は後で null に戻す
             },
           });
+
+          if (willArchive && storageKey) {
+            archivePlanLocal.push({
+              imageId: created.id,
+              imageIndex: img.imageIndex,
+              storageKey,
+              fullBase64: img.full as string,
+            });
+          }
         }
       }
 
-      return event.id;
+      return { eventId: event.id, archivePlan: archivePlanLocal };
     });
+
+    // ===== Supabase Storage に並列アップロード =====
+    // ab-system は webhook を fire-and-forget で送るため、 ここで多少時間がかかっても
+    // ユーザー応答時間には影響しない。 同期的に upload して結果を DB に反映する。
+    if (archivePlan.length > 0) {
+      // 元の (日本語含む) 識別情報は metadata で保存する。 Storage キーは ASCII 限定。
+      const metadata: Record<string, string> = {
+        eventId: String(eventId),
+        abSystemUserId: body.abSystemUserId,
+      };
+      if (body.abSystemUserName) metadata.userName = body.abSystemUserName;
+      if (body.genre) metadata.genre = body.genre;
+      if (body.endpoint) metadata.endpoint = body.endpoint;
+
+      const results = await Promise.all(
+        archivePlan.map((p) =>
+          uploadOneImageToArchive({
+            fullBase64: p.fullBase64,
+            storageKey: p.storageKey,
+            metadata: { ...metadata, imageIndex: String(p.imageIndex) },
+          }).then((r) => ({ ...p, result: r })),
+        ),
+      );
+      // 失敗したものは fullStorageKey を null に戻す (Storage に存在しないものを指してしまうため)
+      const failures = results.filter((r) => !r.result.ok);
+      if (failures.length > 0) {
+        for (const f of failures) {
+          if ('error' in f.result) {
+            console.warn(
+              `[POST /api/events] Supabase upload 失敗 eventId=${eventId} imageIndex=${f.imageIndex}:`,
+              f.result.error,
+            );
+          }
+          await prisma.eventImage.update({
+            where: { id: f.imageId },
+            data: { fullStorageKey: null },
+          });
+        }
+      }
+    }
 
     return NextResponse.json({ success: true, eventId }, { status: 201 });
   } catch (err) {
