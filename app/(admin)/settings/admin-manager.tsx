@@ -57,7 +57,7 @@ export default function AdminManager({ admins, currentAdminId }: Props) {
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <p className="text-sm text-muted-foreground">
           管理画面にログインできるパスワードを複数発行できます。
-          各行は独立で、ラベルで識別 (例: 「manato」「kaneya」「共有」)。
+          各行は独立で、ラベルで識別 (例: 「manato」「共有」)。
           ログイン画面はパスワードのみで、 一致した行で認証されます。
         </p>
         <CreateAdminDialog />
@@ -359,7 +359,7 @@ function CreateAdminDialog() {
           <div className="space-y-3 py-2">
             <div className="space-y-1.5">
               <Label htmlFor="new-admin-name" className="text-xs">
-                ラベル (例: manato / kaneya / 共有)
+                ラベル (例: manato / 共有)
               </Label>
               <Input
                 id="new-admin-name"
