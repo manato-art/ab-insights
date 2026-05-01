@@ -23,6 +23,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
           <NavLink href="/prompts" label="プロンプト管理" />
           <NavLink href="/upload" label="学習アップロード" />
           <NavLink href="/events" label="工程履歴一覧" />
+          <NavLink href="/supabase" label="Supabase" />
           <NavLink href="/settings" label="設定" />
         </nav>
         <Separator />
