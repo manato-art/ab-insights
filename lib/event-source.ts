@@ -18,6 +18,7 @@ export type CombinedWhere = {
   createdAt?: { gte?: Date; lt?: Date };
   downloaded?: boolean;
   horizontallyExpanded?: boolean;
+  aiEdited?: boolean;
 };
 
 /** Event / ArchivedEvent それぞれの count 合計 */
