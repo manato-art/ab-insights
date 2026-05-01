@@ -2,6 +2,7 @@
 // Server-renderable (CSS only — JS なし)。
 // 親要素に position: relative を持たせること。
 
+// blob 配色は CSS 変数経由なので、テーマカラー切替で自動連動する。
 const BLOBS = [
   {
     cls: 'blob blob-1',
@@ -10,7 +11,7 @@ const BLOBS = [
       height: '520px',
       top: '-120px',
       left: '-160px',
-      background: 'oklch(0.93 0.05 60)',
+      background: 'var(--accent)',
     },
   },
   {
@@ -20,7 +21,7 @@ const BLOBS = [
       height: '420px',
       top: '20%',
       right: '-140px',
-      background: 'oklch(0.86 0.07 60)',
+      background: 'var(--brand-orange-soft)',
     },
   },
   {
@@ -30,7 +31,7 @@ const BLOBS = [
       height: '380px',
       bottom: '-100px',
       left: '30%',
-      background: 'oklch(0.78 0.04 256)',
+      background: 'var(--brand-navy-soft)',
     },
   },
   {

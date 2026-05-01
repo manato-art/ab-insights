@@ -12,12 +12,13 @@ export async function loginAction(prev: LoginState, formData: FormData): Promise
   if (!password) {
     return { error: 'パスワードを入力してください' };
   }
-  const ok = await verifyAdminPassword(password);
-  if (!ok) {
+  // 一致した管理者の id を取得 (アクティブな全管理者と照合)
+  const adminId = await verifyAdminPassword(password);
+  if (adminId == null) {
     return { error: 'パスワードが違います' };
   }
 
-  const sid = await createSession();
+  const sid = await createSession(adminId);
   await setSessionCookie(sid);
   // redirect() はここでは使えない(useActionState 経由だと throw される)
   // → クライアント側で state.error が null なら next へ遷移する設計にする

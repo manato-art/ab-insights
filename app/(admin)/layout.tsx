@@ -4,6 +4,8 @@ import { getCurrentSession, logout } from '@/lib/auth';
 import { Toaster } from '@/components/ui/sonner';
 import { Separator } from '@/components/ui/separator';
 import { BackgroundBlobs } from '@/components/background-blobs';
+import { themeCssVars } from '@/lib/theme';
+import { getThemeColor } from './settings-helpers';
 import { SidebarNav } from './sidebar-nav';
 import { Topbar } from './topbar';
 
@@ -11,7 +13,13 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   const session = await getCurrentSession();
   if (!session) redirect('/login');
 
+  const theme = await getThemeColor();
+
   return (
+    <>
+      {/* テーマカラー上書き — :root に CSS 変数を再定義する。
+          dangerouslySetInnerHTML だが、値は lib/theme.ts のホワイトリストから来るので安全。 */}
+      <style dangerouslySetInnerHTML={{ __html: themeCssVars(theme) }} />
     <div
       className="min-h-screen flex"
       style={{ background: 'var(--paper)', color: 'var(--ink)' }}
@@ -83,5 +91,6 @@ export default async function AdminLayout({ children }: { children: React.ReactN
       </div>
       <Toaster />
     </div>
+    </>
   );
 }

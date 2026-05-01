@@ -17,19 +17,27 @@ datasource db {
 
 /// 単一管理者(複数人になったら後で分割)
 model Admin {
-  id           Int      @id @default(autoincrement())
+  id           Int       @id @default(autoincrement())
+  /// 表示用ラベル ("manato" / "kaneya" / "shared" 等)。 既存行は "既定の管理者" を default で受け取る
+  name         String    @default("既定の管理者")
   passwordHash String
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  /// 無効化されたパスワードはログイン照合の対象外
+  active       Boolean   @default(true)
+  lastLoginAt  DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
 }
 
 /// 管理者セッション(簡易 cookie ベース)
 model Session {
   id        String   @id
+  /// このセッションがどの Admin として認証されたか(legacy セッションは null)
+  adminId   Int?
   expiresAt DateTime
   createdAt DateTime @default(now())
 
   @@index([expiresAt])
+  @@index([adminId])
 }
 
 /// ab-system 等の外部アプリからの API 認証トークン

@@ -18,18 +18,23 @@ datasource db {
 }
 
 model Admin {
-  id           Int      @id @default(autoincrement())
+  id           Int       @id @default(autoincrement())
+  name         String    @default("既定の管理者")
   passwordHash String
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  active       Boolean   @default(true)
+  lastLoginAt  DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
 }
 
 model Session {
   id        String   @id
+  adminId   Int?
   expiresAt DateTime
   createdAt DateTime @default(now())
 
   @@index([expiresAt])
+  @@index([adminId])
 }
 
 model ApiToken {

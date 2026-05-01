@@ -1,5 +1,7 @@
-// 管理者認証(単一パスワード)
+// 管理者認証(複数パスワード対応)
 // Phase 1 は軽量実装:cookie + DB の Session テーブル。将来 NextAuth / Clerk に差替え可。
+// Admin は複数行を許容 — 各行が「ラベル + パスワード」のペア。
+// ログインは password 入力のみ:アクティブな全 Admin と bcrypt 照合し、最初に一致した行で session を発行。
 import { cookies } from 'next/headers';
 import { randomBytes, createHash, timingSafeEqual } from 'node:crypto';
 import bcrypt from 'bcryptjs';
@@ -12,28 +14,107 @@ const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 日
 // 管理者パスワード
 // ============================================================
 
-/** 管理者パスワードを(再)設定。初期設定/リセット両対応 */
-export async function setAdminPassword(plain: string) {
+/**
+ * 既存 Admin が無い場合だけ作成する初期化用関数。
+ * 旧 setAdminPassword の互換: 既に行があれば何もしない (複数発行は createAdminPassword を使う)。
+ */
+export async function ensureBootstrapAdmin(plain: string, name = '既定の管理者') {
+  const count = await prisma.admin.count();
+  if (count > 0) return;
   const hash = await bcrypt.hash(plain, 10);
-  const existing = await prisma.admin.findFirst({ orderBy: { id: 'asc' } });
-  if (existing) {
-    await prisma.admin.update({
-      where: { id: existing.id },
-      data: { passwordHash: hash },
-    });
-  } else {
-    await prisma.admin.create({ data: { passwordHash: hash } });
+  await prisma.admin.create({ data: { name, passwordHash: hash } });
+}
+
+/** 新しい管理者パスワードを発行(ラベル + 平文 → bcrypt 保存)。 */
+export async function createAdminPassword(name: string, plain: string): Promise<{ id: number }> {
+  const hash = await bcrypt.hash(plain, 10);
+  const rec = await prisma.admin.create({ data: { name, passwordHash: hash } });
+  return { id: rec.id };
+}
+
+/** 指定 Admin のパスワードを差し替える(本人によるパスワード変更用)。 */
+export async function changeAdminPassword(adminId: number, newPlain: string) {
+  const hash = await bcrypt.hash(newPlain, 10);
+  await prisma.admin.update({ where: { id: adminId }, data: { passwordHash: hash } });
+}
+
+/** 指定 Admin のラベルを変更。 */
+export async function renameAdmin(adminId: number, newName: string) {
+  await prisma.admin.update({ where: { id: adminId }, data: { name: newName } });
+}
+
+/** Admin を有効/無効化。 */
+export async function setAdminActive(adminId: number, active: boolean) {
+  await prisma.admin.update({ where: { id: adminId }, data: { active } });
+}
+
+/** Admin を削除(関連 session も連動削除)。 */
+export async function deleteAdmin(adminId: number) {
+  await prisma.session.deleteMany({ where: { adminId } });
+  await prisma.admin.delete({ where: { id: adminId } });
+}
+
+/** アクティブな Admin が最低 1 件残るかをチェック。削除/無効化時のガードに使う。 */
+export async function countActiveAdmins(excludeId?: number): Promise<number> {
+  return prisma.admin.count({
+    where: {
+      active: true,
+      ...(excludeId != null ? { id: { not: excludeId } } : {}),
+    },
+  });
+}
+
+/** 設定画面表示用の一覧 */
+export async function listAdmins() {
+  return prisma.admin.findMany({
+    orderBy: { id: 'asc' },
+    select: {
+      id: true,
+      name: true,
+      active: true,
+      lastLoginAt: true,
+      createdAt: true,
+    },
+  });
+}
+
+/**
+ * 平文パスワードを検証。一致した Admin の id を返す(未一致は null)。
+ * アクティブな全 Admin と bcrypt 照合。
+ * 一致時は lastLoginAt を非同期更新。
+ */
+export async function verifyAdminPassword(plain: string): Promise<number | null> {
+  const admins = await prisma.admin.findMany({
+    where: { active: true },
+    select: { id: true, passwordHash: true },
+  });
+  for (const a of admins) {
+    const ok = await bcrypt.compare(plain, a.passwordHash);
+    if (ok) {
+      // 非同期で last login 更新
+      prisma.admin
+        .update({ where: { id: a.id }, data: { lastLoginAt: new Date() } })
+        .catch(() => {});
+      return a.id;
+    }
   }
+  return null;
 }
 
-/** 平文パスワードを検証。一致すれば true */
-export async function verifyAdminPassword(plain: string): Promise<boolean> {
-  const admin = await prisma.admin.findFirst({ orderBy: { id: 'asc' } });
-  if (!admin) return false;
-  return bcrypt.compare(plain, admin.passwordHash);
+/** 指定 Admin のハッシュとだけ照合(本人確認用 — パスワード変更前のチェック等)。 */
+export async function verifyAdminPasswordById(
+  adminId: number,
+  plain: string,
+): Promise<boolean> {
+  const a = await prisma.admin.findUnique({
+    where: { id: adminId },
+    select: { passwordHash: true, active: true },
+  });
+  if (!a || !a.active) return false;
+  return bcrypt.compare(plain, a.passwordHash);
 }
 
-/** Admin レコードが 1 件以上あるか */
+/** Admin レコードが 1 件以上あるか(初期セットアップ判定用) */
 export async function adminExists(): Promise<boolean> {
   const count = await prisma.admin.count();
   return count > 0;
@@ -43,10 +124,10 @@ export async function adminExists(): Promise<boolean> {
 // セッション
 // ============================================================
 
-export async function createSession(): Promise<string> {
+export async function createSession(adminId: number | null = null): Promise<string> {
   const id = randomBytes(32).toString('hex');
   const expiresAt = new Date(Date.now() + SESSION_TTL_MS);
-  await prisma.session.create({ data: { id, expiresAt } });
+  await prisma.session.create({ data: { id, expiresAt, adminId } });
   return id;
 }
 

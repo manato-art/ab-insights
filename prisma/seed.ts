@@ -8,15 +8,15 @@
 //   または: npm run db:seed
 
 import { prisma } from '../lib/db';
-import { setAdminPassword, adminExists, createApiToken } from '../lib/auth';
+import { ensureBootstrapAdmin, adminExists, createApiToken } from '../lib/auth';
 
 async function main() {
   console.log('[seed] Start');
 
-  // 1. admin パスワード
+  // 1. admin パスワード (未存在のときのみブートストラップ)
   if (!(await adminExists())) {
     const initialPw = process.env.INITIAL_ADMIN_PASSWORD || 'Admin123';
-    await setAdminPassword(initialPw);
+    await ensureBootstrapAdmin(initialPw);
     console.log(`[seed] Admin created (initial password: "${initialPw}")`);
     console.log('[seed] ⚠️  本番では必ず変更すること');
   } else {

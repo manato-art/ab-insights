@@ -1,7 +1,9 @@
 // 設定ページ (Server Component)
-// - パスワード変更
+// - 管理者パスワード (複数発行) — ラベル付きで複数行を管理
+// - 自分のパスワード変更
 // - API トークン管理
-// - 学習収集フラグ(冗長にここでも触れる)
+// - 学習収集フラグ
+// - テーマカラー
 
 import { prisma } from '@/lib/db';
 import {
@@ -11,17 +13,20 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
-import { getLearningEnabled } from '../settings-helpers';
+import { getCurrentSession, listAdmins } from '@/lib/auth';
+import { getLearningEnabled, getThemeColor } from '../settings-helpers';
 import LearningToggle from '../learning-toggle';
 import PasswordForm from './password-form';
 import TokenManager, { type TokenRow } from './token-manager';
+import AdminManager, { type AdminRow } from './admin-manager';
+import { ThemeColorForm } from './theme-form';
 
 export const dynamic = 'force-dynamic';
 
 export const metadata = { title: '設定 — ab-insights' };
 
 async function getSettingsData() {
-  const [tokens, learningEnabled] = await Promise.all([
+  const [tokens, learningEnabled, theme, admins, session] = await Promise.all([
     prisma.apiToken.findMany({
       orderBy: { createdAt: 'desc' },
       select: {
@@ -33,12 +38,21 @@ async function getSettingsData() {
       },
     }),
     getLearningEnabled(),
+    getThemeColor(),
+    listAdmins(),
+    getCurrentSession(),
   ]);
-  return { tokens: tokens as TokenRow[], learningEnabled };
+  return {
+    tokens: tokens as TokenRow[],
+    learningEnabled,
+    theme,
+    admins: admins as AdminRow[],
+    currentAdminId: session?.adminId ?? null,
+  };
 }
 
 export default async function SettingsPage() {
-  const { tokens, learningEnabled } = await getSettingsData();
+  const { tokens, learningEnabled, theme, admins, currentAdminId } = await getSettingsData();
 
   return (
     <div className="space-y-6">
@@ -65,12 +79,38 @@ export default async function SettingsPage() {
         </CardHeader>
       </Card>
 
-      {/* パスワード変更 */}
+      {/* テーマカラー */}
+      <Card>
+        <CardHeader>
+          <CardTitle>テーマカラー</CardTitle>
+          <CardDescription>
+            ダッシュボードのアクセントカラー。すべての管理画面に即時反映されます。
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <ThemeColorForm current={theme.id} />
+        </CardContent>
+      </Card>
+
+      {/* 管理者パスワード — 複数発行 */}
       <Card>
         <CardHeader>
           <CardTitle>管理者パスワード</CardTitle>
           <CardDescription>
-            ログインに使うパスワードを変更します。
+            ログインに使うパスワードを複数発行できます。 各行はラベルで識別 (ログイン画面はパスワードのみ)。
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <AdminManager admins={admins} currentAdminId={currentAdminId} />
+        </CardContent>
+      </Card>
+
+      {/* 自分のパスワード変更 */}
+      <Card>
+        <CardHeader>
+          <CardTitle>自分のパスワードを変更</CardTitle>
+          <CardDescription>
+            現在ログイン中の管理者のパスワードを変更します。
           </CardDescription>
         </CardHeader>
         <CardContent>

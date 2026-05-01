@@ -307,9 +307,9 @@ const C = {
   muted: 'var(--muted-foreground)',
   hairline: 'var(--hairline)',
   orange: 'var(--brand-orange)',
-  orangeSoft: 'oklch(0.93 0.05 60)',
+  orangeSoft: 'var(--accent)',
   navy: 'var(--brand-navy)',
-  navySoft: 'oklch(0.78 0.04 256)',
+  navySoft: 'var(--brand-navy-soft)',
 };
 
 export default async function DashboardPage({
@@ -569,7 +569,7 @@ export default async function DashboardPage({
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         {[
           { label: '工程数 14日', field: 'events' as const, color: C.ink, fill: 'oklch(0.92 0.005 80)' },
-          { label: '画像枚数 14日', field: 'images' as const, color: C.orange, fill: 'oklch(0.93 0.05 60)' },
+          { label: '画像枚数 14日', field: 'images' as const, color: C.orange, fill: C.orangeSoft },
           { label: 'DL 14日', field: 'downloads' as const, color: C.navy, fill: C.navySoft },
         ].map((s) => (
           <CardChrome key={s.label} title={s.label}>
@@ -745,9 +745,9 @@ function KpiCard({
 }) {
   const decorBg =
     decoration === 'orange'
-      ? 'oklch(0.93 0.05 60)'
+      ? 'var(--accent)'
       : decoration === 'navy'
-        ? 'oklch(0.78 0.04 256)'
+        ? 'var(--brand-navy-soft)'
         : 'transparent';
   return (
     <div
