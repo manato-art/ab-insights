@@ -18,6 +18,7 @@ import {
   uploadOneImageToArchive,
 } from '@/lib/event-archive';
 import { isSupabaseEnabled } from '@/lib/supabase';
+import { formatJstDateTimeSec } from '@/lib/format';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -176,7 +177,6 @@ export async function POST(req: NextRequest) {
             ? buildStorageKey({
                 abSystemUserId: body.abSystemUserId,
                 abSystemUserName: body.abSystemUserName ?? null,
-                genre: body.genre ?? null,
                 createdAt: event.createdAt,
                 imageIndex: img.imageIndex,
                 eventId: event.id,
@@ -211,14 +211,26 @@ export async function POST(req: NextRequest) {
     // ab-system は webhook を fire-and-forget で送るため、 ここで多少時間がかかっても
     // ユーザー応答時間には影響しない。 同期的に upload して結果を DB に反映する。
     if (archivePlan.length > 0) {
-      // 元の (日本語含む) 識別情報は metadata で保存する。 Storage キーは ASCII 限定。
+      // 元の (日本語含む) 全工程情報を metadata で保存する。 Storage キーは ASCII 限定。
+      // Supabase Dashboard で各画像をクリックすると詳細欄で読める。
       const metadata: Record<string, string> = {
         eventId: String(eventId),
         abSystemUserId: body.abSystemUserId,
+        endpoint: body.endpoint,
+        createdAtJst: formatJstDateTimeSec(new Date()),
       };
       if (body.abSystemUserName) metadata.userName = body.abSystemUserName;
       if (body.genre) metadata.genre = body.genre;
-      if (body.endpoint) metadata.endpoint = body.endpoint;
+      if (body.subGenre) metadata.subGenre = body.subGenre;
+      if (body.gender) metadata.gender = body.gender;
+      if (body.ageGroup) metadata.ageGroup = body.ageGroup;
+      if (body.platform) metadata.platform = body.platform;
+      if (body.appealType) metadata.appealType = body.appealType;
+      if (body.appealText) metadata.appealText = body.appealText.slice(0, 500); // 長すぎる場合カット
+      if (body.campaignGoal) metadata.campaignGoal = body.campaignGoal;
+      if (body.cvPointType) metadata.cvPointType = body.cvPointType;
+      if (body.landingPageUrl) metadata.landingPageUrl = body.landingPageUrl;
+      if (body.model) metadata.model = body.model;
 
       const results = await Promise.all(
         archivePlan.map((p) =>

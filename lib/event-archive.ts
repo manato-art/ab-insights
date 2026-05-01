@@ -56,18 +56,19 @@ export function sanitizeForFilename(s: string, max = 80): string {
 /**
  * 1 工程ぶんの画像本体保存用キー組み立て。
  * Supabase Storage の制約で ASCII 限定 (日本語不可)。
- * ジャンルが ASCII safe (英数字) ならファイル名に含めるが、 日本語の場合は省略され
- * `userName_YYYYMMDD_HHmm_e{eventId}_{imageIndex}.webp` の形になる。
- * 元のジャンル名や userName は upload 時の metadata に保存する (Supabase Dashboard で見える)。
  *
- * キーは年月フォルダにまとめる: `YYYY-MM/{filename}.webp`
- *   2026-05/manato.591324@gmail.com_20260501_1120_e78_0.webp
- *   2026-06/someone_20260601_0901_cosmetics_e88_2.webp
+ * 構造: `YYYY-MM/e{eventId}_{userName_or_id}_{YYYYMMDD_HHmm}/{imageIndex}.webp`
+ *
+ *   2026-05/e123_kaneya@cypherone.co.jp_20260501_1904/0.webp
+ *   2026-05/e123_kaneya@cypherone.co.jp_20260501_1904/1.webp
+ *
+ * ・ 同一工程の画像が同じフォルダ内に並ぶ (どの工程でどの画像ができたか一目)
+ * ・ 元の日本語フィールド (genre 等) は upload 時の metadata に保存
+ *   → Supabase Dashboard で各画像をクリックすると詳細欄で確認可能
  */
 export function buildStorageKey(opts: {
   abSystemUserId: string;
   abSystemUserName: string | null;
-  genre: string | null;
   createdAt: Date;
   imageIndex: number;
   eventId: number;
@@ -78,13 +79,8 @@ export function buildStorageKey(opts: {
   );
   const datePart = jstFileStamp(opts.createdAt);
   const folder = jstYearMonthFolder(opts.createdAt);
-  const parts: string[] = [userPart, datePart];
-  if (opts.genre) {
-    const sanitizedGenre = sanitizeForFilename(opts.genre, 30);
-    if (sanitizedGenre !== 'unknown') parts.push(sanitizedGenre);
-  }
-  parts.push(`e${opts.eventId}`, String(opts.imageIndex));
-  return `${folder}/${parts.join('_')}.webp`;
+  const eventFolder = `e${opts.eventId}_${userPart}_${datePart}`;
+  return `${folder}/${eventFolder}/${opts.imageIndex}.webp`;
 }
 
 /** base64 string (data: URL プレフィクスは事前に除去想定) → Buffer */
